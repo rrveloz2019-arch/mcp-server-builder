@@ -1,0 +1,905 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mcp-server-builder/schema/manifest.schema.json",
+  "title": "MCP Server Builder manifest",
+  "description": "Describes a company's existing backend API so the builder can generate an MCP server exposing tools, resources and prompts to AI assistants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestVersion",
+    "company",
+    "server",
+    "api"
+  ],
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "tools"
+      ]
+    },
+    {
+      "type": "object",
+      "required": [
+        "customTools"
+      ]
+    },
+    {
+      "type": "object",
+      "required": [
+        "resources"
+      ]
+    }
+  ],
+  "properties": {
+    "manifestVersion": {
+      "const": "1"
+    },
+    "company": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "website": {
+          "type": "string",
+          "format": "uri"
+        },
+        "defaultCurrency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "default": "USD"
+        }
+      }
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Package and MCP server name, kebab-case."
+        },
+        "version": {
+          "$ref": "#/$defs/semver",
+          "description": "Version of the generated server. Bump major for breaking changes (see SPEC section 10)."
+        },
+        "description": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Short guidance sent to the AI on connect: what this server is for and how to use its tools together."
+        },
+        "transports": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "stdio",
+              "http"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [
+            "stdio"
+          ]
+        },
+        "http": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "default": 3000
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^/",
+              "default": "/mcp"
+            },
+            "publicUrl": {
+              "type": "string",
+              "pattern": "^https://",
+              "description": "External URL of the MCP endpoint; needed for OAuth metadata."
+            }
+          }
+        }
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseUrl",
+        "auth"
+      ],
+      "description": "The company's existing backend. The generated server translates MCP calls into requests to this API.",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "default": 10000
+        },
+        "headers": {
+          "type": "object",
+          "description": "Static non-secret headers sent on every request.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "auth": {
+          "$ref": "#/$defs/upstreamAuth"
+        },
+        "rateLimit": {
+          "$ref": "#/$defs/rateLimit",
+          "description": "Cap on calls from the MCP server to the company API, across all clients."
+        }
+      }
+    },
+    "mappings": {
+      "type": "object",
+      "description": "Named field maps. Left = standard field, right = dot path into one API record. Used for predictable, structured outputs.",
+      "additionalProperties": {
+        "$ref": "#/$defs/fieldMap"
+      }
+    },
+    "tools": {
+      "type": "object",
+      "description": "Standard sales tools from the built-in catalog. Omit a tool to leave it out.",
+      "additionalProperties": false,
+      "properties": {
+        "search_products": {
+          "$ref": "#/$defs/toolBinding"
+        },
+        "get_product_details": {
+          "$ref": "#/$defs/toolBinding"
+        },
+        "list_categories": {
+          "$ref": "#/$defs/toolBinding"
+        },
+        "check_stock": {
+          "$ref": "#/$defs/toolBinding"
+        },
+        "get_pricing": {
+          "$ref": "#/$defs/toolBinding"
+        },
+        "create_quote": {
+          "$ref": "#/$defs/toolBinding"
+        },
+        "create_order": {
+          "$ref": "#/$defs/toolBinding"
+        },
+        "get_order_status": {
+          "$ref": "#/$defs/toolBinding"
+        }
+      }
+    },
+    "customTools": {
+      "type": "array",
+      "description": "Company-specific tools backed by any endpoint (e.g. verify_qr_code, send_email, run_report).",
+      "items": {
+        "$ref": "#/$defs/customTool"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "description": "Read-only data the AI (or user) can open without calling a tool: documents, records, catalogs.",
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "prompts": {
+      "type": "array",
+      "description": "Reusable prompt templates the client can offer the user as ready-made tasks.",
+      "items": {
+        "$ref": "#/$defs/prompt"
+      }
+    },
+    "access": {
+      "$ref": "#/$defs/access"
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Record of every tool call, resource read and prompt fetch.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "sink": {
+          "enum": [
+            "stderr",
+            "file",
+            "http"
+          ],
+          "default": "stderr"
+        },
+        "path": {
+          "type": "string",
+          "description": "File path for sink=file (JSON Lines)."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "Endpoint for sink=http (POST, one JSON event per call)."
+        },
+        "includeArguments": {
+          "type": "boolean",
+          "default": true
+        },
+        "redactFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Argument or output fields replaced with \"[redacted]\" in the log."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "envVarName": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "Name of an environment variable. Secrets are never written in the manifest itself."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,63}$"
+    },
+    "scope": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$",
+      "description": "Permission name, e.g. catalog:read, quotes:write."
+    },
+    "rateLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestsPerMinute"
+      ],
+      "properties": {
+        "requestsPerMinute": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "upstreamAuth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "none"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "in",
+            "name",
+            "valueEnv"
+          ],
+          "properties": {
+            "type": {
+              "const": "api_key"
+            },
+            "in": {
+              "enum": [
+                "header",
+                "query"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "valueEnv": {
+              "$ref": "#/$defs/envVarName"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "tokenEnv"
+          ],
+          "properties": {
+            "type": {
+              "const": "bearer"
+            },
+            "tokenEnv": {
+              "$ref": "#/$defs/envVarName"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "usernameEnv",
+            "passwordEnv"
+          ],
+          "properties": {
+            "type": {
+              "const": "basic"
+            },
+            "usernameEnv": {
+              "$ref": "#/$defs/envVarName"
+            },
+            "passwordEnv": {
+              "$ref": "#/$defs/envVarName"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "tokenUrl",
+            "clientIdEnv",
+            "clientSecretEnv"
+          ],
+          "properties": {
+            "type": {
+              "const": "oauth2_client_credentials"
+            },
+            "tokenUrl": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "clientIdEnv": {
+              "$ref": "#/$defs/envVarName"
+            },
+            "clientSecretEnv": {
+              "$ref": "#/$defs/envVarName"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who may connect to the MCP server and what each client may use. Required when the http transport is enabled.",
+      "properties": {
+        "stdioScopes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/scope"
+          },
+          "description": "Scopes granted to the local user when running over stdio. Default: every scope used by a read tool."
+        },
+        "apiKeys": {
+          "type": "array",
+          "description": "Per-client API keys. Each client gets its own key, scopes, tenant context and rate limit.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "clientId",
+              "keyHashEnv",
+              "scopes"
+            ],
+            "properties": {
+              "clientId": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]*$"
+              },
+              "description": {
+                "type": "string"
+              },
+              "keyHashEnv": {
+                "$ref": "#/$defs/envVarName",
+                "description": "Env var holding the SHA-256 hash of the client's key (the key itself is never stored)."
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/scope"
+                },
+                "minItems": 1
+              },
+              "context": {
+                "$ref": "#/$defs/tenantContext"
+              },
+              "rateLimit": {
+                "$ref": "#/$defs/rateLimit"
+              }
+            }
+          }
+        },
+        "oauth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "issuer",
+            "audience"
+          ],
+          "description": "Accept OAuth 2.1 access tokens from the company's identity provider (MCP authorization spec).",
+          "properties": {
+            "issuer": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "audience": {
+              "type": "string",
+              "minLength": 1
+            },
+            "jwksUrl": {
+              "type": "string",
+              "pattern": "^https://",
+              "description": "Defaults to the issuer's discovery document."
+            },
+            "scopeClaim": {
+              "type": "string",
+              "default": "scope"
+            },
+            "contextClaims": {
+              "type": "object",
+              "description": "Maps tenant context keys to token claims, e.g. customer_id: \"org_id\".",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "rateLimit": {
+              "$ref": "#/$defs/rateLimit",
+              "description": "Per-subject rate limit."
+            }
+          }
+        }
+      }
+    },
+    "tenantContext": {
+      "type": "object",
+      "description": "Fixed values bound to a client. Referenced in requests as {ctx.key}. They override any argument of the same name, so a client can only ever reach its own data.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "fieldMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "argSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "array",
+            "object"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "default": {},
+        "items": {
+          "type": "object",
+          "description": "For arrays of objects: the fields of each item.",
+          "additionalProperties": {
+            "$ref": "#/$defs/argSpec"
+          }
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "path"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "May contain {placeholders} from arguments or {ctx.key} from the client's tenant context."
+        },
+        "query": {
+          "type": "object",
+          "description": "Query parameters. Values may be literals or {placeholders}. A parameter whose placeholder is empty is dropped.",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "headers": {
+          "type": "object",
+          "description": "Per-request headers; may use {placeholders}.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "description": "JSON body template. A string that is exactly one {placeholder} is replaced with the argument, keeping its type.",
+          "type": [
+            "object",
+            "array"
+          ]
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "itemsPath": {
+          "type": "string",
+          "description": "Dot path to the array of records (list endpoints)."
+        },
+        "recordPath": {
+          "type": "string",
+          "description": "Dot path to the single record (detail endpoints)."
+        },
+        "nextCursorPath": {
+          "type": "string",
+          "description": "Dot path to the pagination cursor, if the API has one."
+        },
+        "mapping": {
+          "type": "string",
+          "description": "Name of a field map in mappings, or \"raw\" to pass records through."
+        }
+      }
+    },
+    "longRunning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statusRequest",
+        "statusPath",
+        "doneValues"
+      ],
+      "description": "For actions the API finishes in the background: the server polls and streams progress to the client until done.",
+      "properties": {
+        "jobIdPath": {
+          "type": "string",
+          "description": "Dot path to the job id in the first response; available as {job_id}."
+        },
+        "statusRequest": {
+          "$ref": "#/$defs/request"
+        },
+        "statusPath": {
+          "type": "string"
+        },
+        "doneValues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "failedValues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "progressPath": {
+          "type": "string",
+          "description": "Dot path to a 0-100 number, reported as MCP progress."
+        },
+        "resultRequest": {
+          "$ref": "#/$defs/request",
+          "description": "Fetches the final result, if the status response does not include it."
+        },
+        "pollIntervalMs": {
+          "type": "integer",
+          "minimum": 250,
+          "default": 2000
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "default": 300000
+        }
+      }
+    },
+    "toolCommon": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "description": {
+          "type": "string",
+          "minLength": 40,
+          "description": "What the tool does, when to use it, and what it returns. The AI chooses tools from this text."
+        },
+        "scope": {
+          "$ref": "#/$defs/scope",
+          "description": "Permission a client needs to see and call this tool."
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        },
+        "response": {
+          "$ref": "#/$defs/response"
+        },
+        "requireConfirmation": {
+          "type": "boolean",
+          "description": "Write tools: first call returns a preview; only a second call with confirm=true submits. Default true for write tools."
+        },
+        "maxTotal": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Write tools: refuse when the computed total exceeds this amount."
+        },
+        "longRunning": {
+          "$ref": "#/$defs/longRunning"
+        },
+        "deprecated": {
+          "type": "boolean",
+          "default": false
+        },
+        "replacedBy": {
+          "$ref": "#/$defs/name"
+        }
+      }
+    },
+    "toolBinding": {
+      "type": "object",
+      "$ref": "#/$defs/toolCommon",
+      "required": [
+        "request"
+      ],
+      "unevaluatedProperties": false
+    },
+    "customTool": {
+      "type": "object",
+      "$ref": "#/$defs/toolCommon",
+      "required": [
+        "name",
+        "title",
+        "description",
+        "kind",
+        "args",
+        "request"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "description": "read = no side effects; write = creates or changes data; destructive = deletes or cannot be undone."
+        },
+        "args": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/argSpec"
+          }
+        },
+        "idempotent": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "title",
+        "description",
+        "uri"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 20
+        },
+        "uri": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9+.-]*://",
+          "description": "Fixed URI, or a template with {placeholders}, e.g. catalog://products/{product_id}."
+        },
+        "mimeType": {
+          "type": "string",
+          "default": "application/json"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "file": {
+          "type": "string",
+          "description": "Serve a local file bundled with the server (e.g. docs/return-policy.md)."
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        },
+        "response": {
+          "$ref": "#/$defs/response"
+        },
+        "list": {
+          "$ref": "#/$defs/request",
+          "description": "For templates: request that lists available instances, so clients can browse them."
+        },
+        "listResponse": {
+          "$ref": "#/$defs/response"
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "file"
+          ],
+          "not": {
+            "type": "object",
+            "required": [
+              "request"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "request"
+          ],
+          "not": {
+            "type": "object",
+            "required": [
+              "file"
+            ]
+          }
+        }
+      ]
+    },
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "title",
+        "description",
+        "template"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 20
+        },
+        "args": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean",
+                "default": false
+              },
+              "completeFrom": {
+                "$ref": "#/$defs/name",
+                "description": "Tool whose results offer autocomplete values."
+              }
+            }
+          }
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text sent to the AI as the user's message; {placeholders} are filled from args."
+        },
+        "embedResources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Resource URIs attached to the prompt as context."
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      }
+    }
+  }
+}
