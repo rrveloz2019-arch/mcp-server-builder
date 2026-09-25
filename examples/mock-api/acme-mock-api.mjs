@@ -17,6 +17,8 @@ const PRODUCTS = [
   { sku: "TN-300", title: "Summit 2-Person Tent", summary: "Three-season backpacking tent.", category: { id: "camping", name: "Camping" }, pricing: { list: 329.0, currency: "USD" }, links: { web: "https://acme-outdoor.example.com/p/TN-300" }, media: [] },
 ];
 const STOCK = { "TB-100": [{ code: "NYC", available: 42 }, { code: "LAX", available: 0, next_restock: "2026-10-15" }], "TB-200": [{ code: "NYC", available: 7 }], "TN-300": [{ code: "LAX", available: 12 }] };
+// Loose search like a real catalog: every word must appear, plurals match singulars ("boots" finds "Boot").
+const matches = (text, q) => q.split(/\s+/).filter(Boolean).every((w) => text.toLowerCase().includes(w.replace(/(?<=\w{3})s$/, "")));
 const DISCOUNTS = { "C-2044": 10, "C-1001": 5 };
 
 export function createMockApi({ apiKey = "test-upstream-key", jobSteps = [0, 40, 100] } = {}) {
@@ -50,7 +52,7 @@ export function createMockApi({ apiKey = "test-upstream-key", jobSteps = [0, 40,
       const cat = url.searchParams.get("category");
       const limit = Number(url.searchParams.get("limit") ?? 10);
       const start = Number(url.searchParams.get("cursor") ?? 0);
-      const all = PRODUCTS.filter((x) => (!q || `${x.title} ${x.summary}`.toLowerCase().includes(q)) && (!cat || x.category.id === cat || x.category.name === cat));
+      const all = PRODUCTS.filter((x) => matches(`${x.title} ${x.summary}`, q) && (!cat || x.category.id === cat || x.category.name === cat));
       const page = all.slice(start, start + limit);
       return send(200, { data: page, meta: { next: start + limit < all.length ? String(start + limit) : null } });
     }

@@ -209,6 +209,9 @@ e.g. `customer_id: C-2044`. When a request uses `{customer_id}` and the client h
 context, **the context value wins over whatever the AI passed**. Endpoints can also use `{ctx.customer_id}`
 directly. The validator requires every client to define any `ctx.*` key that is used, so no call goes
 out unbound. Result: a reseller's assistant can only price, quote and read orders for its own account.
+For such a client, `tools/list` also leaves the fixed argument out of the tool's input schema and says
+in the description which value it is bound to, so the AI does not ask the user for it or report the
+wrong customer (found in the phase 3 test with a live Claude client).
 
 ## 10. Rate limiting and audit logging
 
