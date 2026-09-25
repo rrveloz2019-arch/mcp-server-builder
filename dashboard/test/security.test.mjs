@@ -38,12 +38,16 @@ before(async () => {
   const m = { ...structuredClone(example), company: { ...example.company, name: MARKER } };
   manifestA = (await alice.api("POST", `/api/workspaces/${wsA.id}/manifests`, { manifest: m, files: { "docs/return-policy.md": policy } })).data;
 });
-after(() => d.close());
+after(async () => { await d.close(); });
 
 // ---------- configuration ----------
-test("config: refuses to start without an encryption key, with http in production, or without admins", () => {
-  const good = { PUBLIC_URL: "https://mcp.example.com", OIDC_ISSUER: "https://login.microsoftonline.com/e8c9f1fa-4f30-41cc-b2bc-1e9fe8607b5a/v2.0", OIDC_CLIENT_ID: "x", OIDC_CLIENT_SECRET: "y", DATA_ENCRYPTION_KEY: randomBytes(32).toString("base64"), ADMIN_OIDS: ADMIN.oid };
+test("config: refuses to start without an encryption key, with http in production, without admins, or without database TLS", () => {
+  const good = { PUBLIC_URL: "https://mcp.example.com", OIDC_ISSUER: "https://login.microsoftonline.com/e8c9f1fa-4f30-41cc-b2bc-1e9fe8607b5a/v2.0", OIDC_CLIENT_ID: "x", OIDC_CLIENT_SECRET: "y", DATA_ENCRYPTION_KEY: randomBytes(32).toString("base64"), ADMIN_OIDS: ADMIN.oid, DATABASE_URL: "postgres://app@db.example.com:5432/mcpb" };
   assert.ok(loadConfig(good));
+  assert.equal(loadConfig(good).database.ssl, true, "database TLS is on by default");
+  assert.throws(() => loadConfig({ ...good, DATABASE_URL: "" }), /DATABASE_URL/);
+  assert.throws(() => loadConfig({ ...good, DATABASE_SSL: "off" }), /only allowed with DASHBOARD_INSECURE_DEV/);
+  assert.throws(() => loadConfig({ ...good, DATABASE_URL: "postgres://app@db.example.com/mcpb?sslmode=disable" }), /must not contain sslmode/);
   assert.throws(() => loadConfig({ ...good, DATA_ENCRYPTION_KEY: "" }), ConfigError);
   assert.throws(() => loadConfig({ ...good, DATA_ENCRYPTION_KEY: randomBytes(16).toString("base64") }), /32 random bytes/);
   assert.throws(() => loadConfig({ ...good, PUBLIC_URL: "http://mcp.example.com" }), /https/);
@@ -136,7 +140,7 @@ test("auth: sign out ends the session on the server, not only in the browser", a
 test("auth: sessions expire when idle", async () => {
   const a = d.browser();
   await a.signIn(ALICE);
-  d.db.raw.prepare("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?").run(Date.now() - d.config.session.idleMs - 1000, sha256(a.jar.get("mcpb_session")));
+  await d.db.query("UPDATE sessions SET last_seen_at = $1 WHERE token_hash = $2", [Date.now() - d.config.session.idleMs - 1000, sha256(a.jar.get("mcpb_session"))]);
   assert.equal((await a.api("GET", "/api/me")).status, 401);
 });
 
@@ -172,12 +176,12 @@ test("isolation: client B cannot read, change, delete, validate or download clie
   assert.equal(still.data.manifest.company.name, MARKER, "A's manifest is untouched");
 });
 
-test("isolation: a ciphertext moved to another workspace does not decrypt", () => {
-  const row = d.db.raw.prepare("SELECT sealed FROM manifests WHERE id = ?").get(manifestA.id);
-  const b = d.db.createManifest(wsB.id, { name: "x", manifest: {}, files: {} }, "test");
-  d.db.raw.prepare("UPDATE manifests SET sealed = ? WHERE id = ?").run(row.sealed, b.id);
-  assert.throws(() => d.db.getManifest(wsB.id, b.id), /Unsupported state or unable to authenticate data/);
-  d.db.deleteManifest(wsB.id, b.id);
+test("isolation: a ciphertext moved to another workspace does not decrypt", async () => {
+  const { rows: [row] } = await d.db.query("SELECT sealed FROM manifests WHERE id = $1", [manifestA.id]);
+  const b = await d.db.createManifest(wsB.id, { name: "x", manifest: {}, files: {} }, (await d.db.userByOid(BOB.oid)).id);
+  await d.db.query("UPDATE manifests SET sealed = $1 WHERE id = $2", [row.sealed, b.id]);
+  await assert.rejects(() => d.db.getManifest(wsB.id, b.id), /Unsupported state or unable to authenticate data/);
+  await d.db.deleteManifest(wsB.id, b.id);
 });
 
 test("roles: a viewer can open and download but not change or delete", async () => {
@@ -193,7 +197,7 @@ test("roles: clients cannot use admin routes, and the attempt is logged", async 
   for (const [method, url, body] of [["GET", "/api/admin/overview"], ["POST", "/api/admin/workspaces", { name: "Mine" }], ["POST", `/api/admin/workspaces/${wsB.id}/invites`, { email: ALICE.email, role: "editor" }], ["PUT", `/api/admin/users/${bob.me ? "x" : "x"}/disabled`, { disabled: true }]]) {
     assert.equal((await alice.api(method, url, body)).status, 403, `${method} ${url}`);
   }
-  const log = d.db.auditLog(50);
+  const log = await d.db.auditLog(50);
   assert.ok(log.some((e) => e.action === "admin.denied" && e.email === ALICE.email));
 });
 
@@ -246,14 +250,13 @@ test("secrets: manifests containing credentials are refused, without echoing the
 });
 
 test("secrets: manifests are encrypted at rest and session tokens are stored only as hashes", () => {
-  const bytes = readFileSync(d.dbPath);
-  const wal = (() => { try { return readFileSync(d.dbPath + "-wal"); } catch { return Buffer.alloc(0); } })();
-  for (const buf of [bytes, wal]) {
-    assert.ok(!buf.includes(MARKER), "company name not in plain text");
-    assert.ok(!buf.includes("acme-outdoor-sales"), "server name not in plain text");
-    assert.ok(!buf.includes("ACME_API_KEY"), "manifest body not in plain text");
-    assert.ok(!buf.includes(alice.jar.get("mcpb_session")), "session token not stored");
-  }
+  // Full dump of the database, as someone with a copy of it (or a backup) would see it.
+  const dump = execFileSync("pg_dump", ["--no-owner", d.testDb.url], { maxBuffer: 64 * 1024 * 1024 }).toString();
+  assert.ok(dump.includes("CREATE TABLE public.manifests"), "the dump is real");
+  assert.ok(!dump.includes(MARKER), "company name not in plain text");
+  assert.ok(!dump.includes("acme-outdoor-sales"), "server name not in plain text");
+  assert.ok(!dump.includes("ACME_API_KEY"), "manifest body not in plain text");
+  assert.ok(!dump.includes(alice.jar.get("mcpb_session")), "session token not stored");
 });
 
 test("secrets: logs contain no tokens, codes or manifest contents", () => {
@@ -286,7 +289,7 @@ test("abuse: sign-in attempts are rate limited per address", async () => {
     let limited = 0;
     for (let i = 0; i < 25; i++) if ((await r.raw("GET", "/auth/login")).status === 429) limited++;
     assert.ok(limited > 0, "sign-in was throttled");
-  } finally { fresh.close(); }
+  } finally { await fresh.close(); }
 });
 
 test("abuse: server generation is rate limited per user", async () => {
@@ -301,7 +304,7 @@ test("abuse: server generation is rate limited per user", async () => {
     const codes = [];
     for (let i = 0; i < 12; i++) codes.push((await a.api("POST", url, {})).status);
     assert.ok(codes.includes(429), codes.join(","));
-  } finally { fresh.close(); }
+  } finally { await fresh.close(); }
 });
 
 test("concurrency: a stale save is refused instead of overwriting someone else's work", async () => {
@@ -324,7 +327,7 @@ test("generate: returns a zip of a working server project for the saved manifest
   assert.ok(!/\.env\n|node_modules/.test(listing), "no .env or dependencies in the download");
 });
 
-test("audit: sign-ins, changes and downloads are recorded", () => {
-  const actions = new Set(d.db.auditLog(500).map((e) => e.action));
+test("audit: sign-ins, changes and downloads are recorded", async () => {
+  const actions = new Set((await d.db.auditLog(500)).map((e) => e.action));
   for (const a of ["login", "workspace.create", "invite.create", "manifest.create", "manifest.update", "manifest.generate", "logout", "admin.denied"]) assert.ok(actions.has(a), a);
 });

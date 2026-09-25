@@ -59,20 +59,20 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
     api: rateLimiter({ limit: rateLimits.api ?? 300, windowMs: 60_000 }),
     generate: rateLimiter({ limit: rateLimits.generate ?? 10, windowMs: 60_000 }),
   };
-  const purge = setInterval(() => db.purgeExpired(config.session.idleMs), 60_000);
+  const purge = setInterval(() => db.purgeExpired(config.session.idleMs).catch((err) => log.error(`purge failed: ${err.code ?? err.name}`)), 60_000);
   purge.unref();
 
   // ---------- sessions ----------
-  function loadSession(req) {
+  async function loadSession(req) {
     const token = parseCookies(req.headers.cookie)[cookieName];
     if (!token || token.length > 100) return null;
-    const s = db.session(token);
+    const s = await db.session(token);
     if (!s) return null;
     const t = Date.now();
-    if (s.expires_at < t || s.last_seen_at + config.session.idleMs < t) { db.deleteSession(token); return null; }
-    const user = db.userById(s.user_id);
-    if (!user || user.disabled) { db.deleteSession(token); return null; }
-    db.touchSession(token);
+    if (s.expires_at < t || s.last_seen_at + config.session.idleMs < t) { await db.deleteSession(token); return null; }
+    const user = await db.userById(s.user_id);
+    if (!user || user.disabled) { await db.deleteSession(token); return null; }
+    await db.touchSession(token);
     return { token, csrf: s.csrf, user, isAdmin: config.adminOids.has(user.oid.toLowerCase()) };
   }
 
@@ -85,12 +85,12 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
   }
 
   // Workspace access. Not a member (and not admin) = 404, same as not found.
-  function access(session, workspaceId, { edit = false } = {}) {
+  async function access(session, workspaceId, { edit = false } = {}) {
     if (!UUID.test(workspaceId)) throw new HttpError(404, "not found");
-    const ws = db.workspace(workspaceId);
+    const ws = await db.workspace(workspaceId);
     if (!ws) throw new HttpError(404, "not found");
     if (session.isAdmin) return { ws, role: "admin" };
-    const m = db.membership(workspaceId, session.user.id);
+    const m = await db.membership(workspaceId, session.user.id);
     if (!m) throw new HttpError(404, "not found");
     if (edit && m.role !== "editor") throw new HttpError(403, "your role in this workspace is read-only");
     return { ws, role: m.role };
@@ -140,7 +140,7 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
     if (p === "/auth/login" && req.method === "GET") {
       if (limits.auth(`ip:${ctx.ip}`)) throw new HttpError(429, "too many sign-in attempts, try again in a minute");
       const state = oidc.randomState(), nonce = oidc.randomNonce(), verifier = oidc.randomPKCECodeVerifier();
-      db.saveLoginState(state, nonce, verifier);
+      await db.saveLoginState(state, nonce, verifier);
       const target = oidc.buildAuthorizationUrl(oidcConfig, {
         redirect_uri: config.oidc.redirectUri, scope: config.oidc.scope, state, nonce,
         code_challenge: await oidc.calculatePKCECodeChallenge(verifier), code_challenge_method: "S256", prompt: "select_account",
@@ -169,8 +169,8 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
       const fail = (code, status, msg) => Object.assign(new HttpError(status, msg), { code });
       if (limits.auth(`ip:${ctx.ip}`)) throw fail("rate", 429, "too many sign-in attempts");
       const state = url.searchParams.get("state") ?? "";
-      const saved = state && state.length < 200 ? db.takeLoginState(state) : null;
-      if (!saved) { db.audit({ action: "login", outcome: "bad_state", ip: ctx.ip }); throw fail("expired", 400, "sign-in expired"); }
+      const saved = state && state.length < 200 ? await db.takeLoginState(state) : null;
+      if (!saved) { await db.audit({ action: "login", outcome: "bad_state", ip: ctx.ip }); throw fail("expired", 400, "sign-in expired"); }
       let claims;
       try {
         // Build the callback URL from PUBLIC_URL, never from the Host header.
@@ -178,35 +178,35 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
         const tokens = await oidc.authorizationCodeGrant(oidcConfig, current, { pkceCodeVerifier: saved.code_verifier, expectedState: state, expectedNonce: saved.nonce, idTokenExpected: true });
         claims = tokens.claims();
       } catch (err) {
-        db.audit({ action: "login", outcome: "token_rejected", ip: ctx.ip });
+        await db.audit({ action: "login", outcome: "token_rejected", ip: ctx.ip });
         log.error(`sign-in rejected: ${err.code ?? err.name}`);
         throw fail("failed", 401, "sign-in failed");
       }
       const oid = String(claims.oid ?? claims.sub ?? "");
       const email = String(claims.email ?? claims.preferred_username ?? "").toLowerCase();
       if (!oid || !EMAIL.test(email)) throw fail("missing_claims", 401, "no account id or email");
-      if (claims.email_verified === false) { db.audit({ action: "login", target: email, outcome: "email_unverified", ip: ctx.ip }); throw fail("unverified", 403, "email not verified"); }
-      if (expectedTenant && String(claims.tid ?? "").toLowerCase() !== expectedTenant) { db.audit({ action: "login", target: email, outcome: "wrong_tenant", ip: ctx.ip }); throw fail("tenant", 403, "wrong tenant"); }
+      if (claims.email_verified === false) { await db.audit({ action: "login", target: email, outcome: "email_unverified", ip: ctx.ip }); throw fail("unverified", 403, "email not verified"); }
+      if (expectedTenant && String(claims.tid ?? "").toLowerCase() !== expectedTenant) { await db.audit({ action: "login", target: email, outcome: "wrong_tenant", ip: ctx.ip }); throw fail("tenant", 403, "wrong tenant"); }
 
-      let user = db.userByOid(oid);
+      let user = await db.userByOid(oid);
       const isAdmin = config.adminOids.has(oid.toLowerCase());
       if (!user) {
-        const invited = db.raw.prepare("SELECT 1 FROM invites WHERE email = ? AND accepted_at IS NULL AND expires_at > ?").get(email, Date.now());
+        const invited = await db.hasOpenInvite(email);
         if (!isAdmin && !invited) {
-          db.audit({ action: "login", target: email, outcome: "not_invited", ip: ctx.ip });
+          await db.audit({ action: "login", target: email, outcome: "not_invited", ip: ctx.ip });
           throw fail("not_invited", 403, "not invited");
         }
-        user = db.createUser({ oid, email, name: claims.name });
+        user = await db.createUser({ oid, email, name: claims.name });
       }
-      if (user.disabled) { db.audit({ userId: user.id, action: "login", outcome: "disabled", ip: ctx.ip }); throw fail("disabled", 403, "disabled"); }
-      db.touchLogin(user.id, email, claims.name);
-      db.acceptInvites({ ...user, email });
+      if (user.disabled) { await db.audit({ userId: user.id, action: "login", outcome: "disabled", ip: ctx.ip }); throw fail("disabled", 403, "disabled"); }
+      await db.touchLogin(user.id, email, claims.name);
+      await db.acceptInvites({ ...user, email });
       // New random session on every sign-in (no session fixation).
       const old = parseCookies(req.headers.cookie)[cookieName];
-      if (old) db.deleteSession(old);
+      if (old) await db.deleteSession(old);
       const token = randomToken();
-      db.createSession(token, user.id, randomToken(), config.session.absoluteMs);
-      db.audit({ userId: user.id, action: "login", ip: ctx.ip });
+      await db.createSession(token, user.id, randomToken(), config.session.absoluteMs);
+      await db.audit({ userId: user.id, action: "login", ip: ctx.ip });
       res.writeHead(302, { location: "/", "set-cookie": cookie(cookieName, token, { secure: config.secureCookies, maxAgeSec: Math.floor(config.session.absoluteMs / 1000) }) });
       return res.end();
     }
@@ -217,7 +217,7 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
     let m;
 
     // ---- everything below needs a session ----
-    const session = loadSession(req);
+    const session = await loadSession(req);
     if (!session) {
       if (limits.anon(`ip:${ctx.ip}`)) throw new HttpError(429, "too many requests");
       throw new HttpError(401, "please sign in");
@@ -230,14 +230,14 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
     const audit = (action, extra = {}) => db.audit({ userId: session.user.id, ip: ctx.ip, action, ...extra });
 
     if (p === "/auth/logout" && req.method === "POST") {
-      db.deleteSession(session.token);
-      audit("logout");
+      await db.deleteSession(session.token);
+      await audit("logout");
       res.writeHead(204, { "set-cookie": cookie(cookieName, "", { secure: config.secureCookies, maxAgeSec: 0 }) });
       return res.end();
     }
 
     if (p === "/api/me" && req.method === "GET") {
-      const workspaces = session.isAdmin ? db.allWorkspaces().map((w) => ({ id: w.id, name: w.name, role: "admin" })) : db.workspacesForUser(session.user.id);
+      const workspaces = session.isAdmin ? (await db.allWorkspaces()).map((w) => ({ id: w.id, name: w.name, role: "admin" })) : await db.workspacesForUser(session.user.id);
       return send(200, { user: { email: session.user.email, name: session.user.name }, isAdmin: session.isAdmin, csrf: session.csrf, workspaces });
     }
     if (p === "/api/catalog" && req.method === "GET") return send(200, catalog);
@@ -258,57 +258,57 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
     if (m) {
       const [, wsId, id, action] = m;
       if (!id) {
-        if (req.method === "GET") { access(session, wsId); return send(200, { manifests: db.listManifests(wsId) }); }
+        if (req.method === "GET") { await access(session, wsId); return send(200, { manifests: await db.listManifests(wsId) }); }
         if (req.method === "POST") {
-          access(session, wsId, { edit: true });
+          await access(session, wsId, { edit: true });
           const manifest = body.manifest === undefined ? {} : cleanManifest(body.manifest);
           const files = cleanFiles(body.files);
           const secrets = findSecrets(manifest, files);
           if (secrets.length) throw Object.assign(new HttpError(422, "the manifest looks like it contains secrets"), { details: secrets });
-          const created = db.createManifest(wsId, { name: displayName(manifest), manifest, files }, session.user.id);
-          audit("manifest.create", { workspaceId: wsId, target: created.id });
+          const created = await db.createManifest(wsId, { name: displayName(manifest), manifest, files }, session.user.id);
+          await audit("manifest.create", { workspaceId: wsId, target: created.id });
           return send(201, created);
         }
       }
       if (id && !UUID.test(id)) throw new HttpError(404, "not found");
       if (id && !action) {
         if (req.method === "GET") {
-          access(session, wsId);
-          const found = db.getManifest(wsId, id);
+          await access(session, wsId);
+          const found = await db.getManifest(wsId, id);
           if (!found) throw new HttpError(404, "not found");
           return send(200, found);
         }
         if (req.method === "PUT") {
-          access(session, wsId, { edit: true });
+          await access(session, wsId, { edit: true });
           const manifest = cleanManifest(body.manifest);
           const files = cleanFiles(body.files);
           if (!Number.isInteger(body.revision)) throw new HttpError(400, "revision is required");
           const secrets = findSecrets(manifest, files);
           if (secrets.length) throw Object.assign(new HttpError(422, "the manifest looks like it contains secrets"), { details: secrets });
-          if (!db.getManifest(wsId, id)) throw new HttpError(404, "not found");
-          const updated = db.updateManifest(wsId, id, { name: displayName(manifest), manifest, files }, body.revision, session.user.id);
+          if (!await db.getManifest(wsId, id)) throw new HttpError(404, "not found");
+          const updated = await db.updateManifest(wsId, id, { name: displayName(manifest), manifest, files }, body.revision, session.user.id);
           if (!updated) throw new HttpError(409, "someone else saved this manifest in the meantime; reload it first");
-          audit("manifest.update", { workspaceId: wsId, target: id });
+          await audit("manifest.update", { workspaceId: wsId, target: id });
           return send(200, updated);
         }
         if (req.method === "DELETE") {
-          access(session, wsId, { edit: true });
-          if (!db.deleteManifest(wsId, id)) throw new HttpError(404, "not found");
-          audit("manifest.delete", { workspaceId: wsId, target: id });
+          await access(session, wsId, { edit: true });
+          if (!await db.deleteManifest(wsId, id)) throw new HttpError(404, "not found");
+          await audit("manifest.delete", { workspaceId: wsId, target: id });
           res.writeHead(204);
           return res.end();
         }
       }
       if (action === "validate" && req.method === "POST") {
-        access(session, wsId);
-        if (!db.getManifest(wsId, id)) throw new HttpError(404, "not found");
+        await access(session, wsId);
+        if (!await db.getManifest(wsId, id)) throw new HttpError(404, "not found");
         return send(200, validateWithSecrets(cleanManifest(body.manifest), cleanFiles(body.files)));
       }
       if (action === "generate" && req.method === "POST") {
-        access(session, wsId);
+        await access(session, wsId);
         if (limits.generate(`user:${session.user.id}`)) throw new HttpError(429, "too many generations, try again in a minute");
         // Always generate from the saved copy, so the download matches what is stored.
-        const saved = db.getManifest(wsId, id);
+        const saved = await db.getManifest(wsId, id);
         if (!saved) throw new HttpError(404, "not found");
         const v = validateWithSecrets(saved.manifest, saved.files);
         if (v.errors.length) return send(422, { error: "the saved manifest has problems; fix and save it first", errors: v.errors });
@@ -319,7 +319,7 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
           const r = generate(file, outDir);
           const name = r.config.server.name;
           const zip = zipFolder(outDir, name);
-          audit("manifest.generate", { workspaceId: wsId, target: id });
+          await audit("manifest.generate", { workspaceId: wsId, target: id });
           res.writeHead(200, {
             "content-type": "application/zip",
             "content-disposition": `attachment; filename="${name}-${r.config.server.version}.zip"`,
@@ -336,52 +336,52 @@ export async function createApp({ config, db, log = console, rateLimits = {} }) 
 
     // ---- admin ----
     if (p.startsWith("/api/admin/")) {
-      if (!session.isAdmin) { audit("admin.denied", { target: p, outcome: "forbidden" }); throw new HttpError(403, "admins only"); }
+      if (!session.isAdmin) { await audit("admin.denied", { target: p, outcome: "forbidden" }); throw new HttpError(403, "admins only"); }
       if (p === "/api/admin/overview" && req.method === "GET") {
-        return send(200, { workspaces: db.allWorkspaces(), users: db.listUsers(), audit: db.auditLog(100) });
+        return send(200, { workspaces: await db.allWorkspaces(), users: await db.listUsers(), audit: await db.auditLog(100) });
       }
       if (p === "/api/admin/workspaces" && req.method === "POST") {
         const name = String(body.name ?? "").trim();
         if (name.length < 2 || name.length > 80) throw new HttpError(400, "workspace name must be 2 to 80 characters");
-        const ws = db.createWorkspace(name, session.user.id);
-        audit("workspace.create", { workspaceId: ws.id });
+        const ws = await db.createWorkspace(name, session.user.id);
+        await audit("workspace.create", { workspaceId: ws.id });
         return send(201, ws);
       }
       if ((m = p.match(/^\/api\/admin\/workspaces\/([^/]+)$/))) {
-        const { ws } = access(session, m[1]);
-        if (req.method === "GET") return send(200, { ...ws, members: db.members(ws.id), invites: db.invites(ws.id) });
-        if (req.method === "DELETE") { db.deleteWorkspace(ws.id); audit("workspace.delete", { workspaceId: ws.id }); res.writeHead(204); return res.end(); }
+        const { ws } = await access(session, m[1]);
+        if (req.method === "GET") return send(200, { ...ws, members: await db.members(ws.id), invites: await db.invites(ws.id) });
+        if (req.method === "DELETE") { await db.deleteWorkspace(ws.id); await audit("workspace.delete", { workspaceId: ws.id }); res.writeHead(204); return res.end(); }
       }
       if ((m = p.match(/^\/api\/admin\/workspaces\/([^/]+)\/invites$/)) && req.method === "POST") {
-        const { ws } = access(session, m[1]);
+        const { ws } = await access(session, m[1]);
         const email = String(body.email ?? "").trim().toLowerCase();
         const role = body.role === "viewer" ? "viewer" : body.role === "editor" ? "editor" : null;
         if (!EMAIL.test(email)) throw new HttpError(400, "enter a valid email address");
         if (!role) throw new HttpError(400, "role must be editor or viewer");
-        const inv = db.createInvite(ws.id, email, role, session.user.id);
+        const inv = await db.createInvite(ws.id, email, role, session.user.id);
         // An existing user with that email is added right away.
-        const existing = db.raw.prepare("SELECT * FROM users WHERE email = ?").get(email);
-        if (existing) db.acceptInvites(existing);
-        audit("invite.create", { workspaceId: ws.id, target: email });
+        const existing = await db.userByEmail(email);
+        if (existing) await db.acceptInvites(existing);
+        await audit("invite.create", { workspaceId: ws.id, target: email });
         return send(201, inv);
       }
       if ((m = p.match(/^\/api\/admin\/workspaces\/([^/]+)\/invites\/([^/]+)$/)) && req.method === "DELETE") {
-        const { ws } = access(session, m[1]);
-        if (!UUID.test(m[2]) || !db.revokeInvite(ws.id, m[2])) throw new HttpError(404, "not found");
-        audit("invite.revoke", { workspaceId: ws.id, target: m[2] });
+        const { ws } = await access(session, m[1]);
+        if (!UUID.test(m[2]) || !await db.revokeInvite(ws.id, m[2])) throw new HttpError(404, "not found");
+        await audit("invite.revoke", { workspaceId: ws.id, target: m[2] });
         res.writeHead(204); return res.end();
       }
       if ((m = p.match(/^\/api\/admin\/workspaces\/([^/]+)\/members\/([^/]+)$/)) && req.method === "DELETE") {
-        const { ws } = access(session, m[1]);
-        if (!UUID.test(m[2]) || !db.removeMember(ws.id, m[2])) throw new HttpError(404, "not found");
-        audit("member.remove", { workspaceId: ws.id, target: m[2] });
+        const { ws } = await access(session, m[1]);
+        if (!UUID.test(m[2]) || !await db.removeMember(ws.id, m[2])) throw new HttpError(404, "not found");
+        await audit("member.remove", { workspaceId: ws.id, target: m[2] });
         res.writeHead(204); return res.end();
       }
       if ((m = p.match(/^\/api\/admin\/users\/([^/]+)\/disabled$/)) && req.method === "PUT") {
-        if (!UUID.test(m[1]) || !db.userById(m[1])) throw new HttpError(404, "not found");
+        if (!UUID.test(m[1]) || !await db.userById(m[1])) throw new HttpError(404, "not found");
         if (m[1] === session.user.id) throw new HttpError(400, "you cannot disable your own account");
-        db.setUserDisabled(m[1], body.disabled === true);
-        if (body.disabled === true) db.deleteUserSessions(m[1]);
+        await db.setUserDisabled(m[1], body.disabled === true);
+        if (body.disabled === true) await db.deleteUserSessions(m[1]);
         audit(body.disabled === true ? "user.disable" : "user.enable", { target: m[1] });
         return send(200, { ok: true });
       }

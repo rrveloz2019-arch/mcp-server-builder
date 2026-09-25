@@ -38,6 +38,15 @@ export function loadConfig(env = process.env) {
   if (!adminOids.length) problems.push("ADMIN_OIDS is required (comma-separated Entra object ids of the admins)");
   for (const oid of adminOids) if (!UUID.test(oid)) problems.push(`ADMIN_OIDS: "${oid}" is not an object id (GUID)`);
 
+  // PostgreSQL connection. TLS with certificate checks is required, except for a
+  // local database during development (DATABASE_SSL=off with DASHBOARD_INSECURE_DEV=1).
+  const dbUrl = need("DATABASE_URL");
+  const dbSsl = env.DATABASE_SSL !== "off";
+  if (dbUrl && !/^postgres(ql)?:\/\//.test(dbUrl)) problems.push("DATABASE_URL must start with postgres:// or postgresql://");
+  // pg lets "sslmode" in the URL override the TLS settings below, so it is not accepted there.
+  if (dbUrl && /[?&]sslmode=/i.test(dbUrl)) problems.push("DATABASE_URL must not contain sslmode (TLS with certificate checks is always on; remove it)");
+  if (!dbSsl && !insecureDev) problems.push("DATABASE_SSL=off is only allowed with DASHBOARD_INSECURE_DEV=1 (production must use TLS)");
+
   const idleMin = Number(env.SESSION_IDLE_MINUTES ?? 60), maxHours = Number(env.SESSION_MAX_HOURS ?? 8);
   if (!(idleMin >= 5 && idleMin <= 24 * 60)) problems.push("SESSION_IDLE_MINUTES must be a number from 5 to 1440");
   if (!(maxHours >= 1 && maxHours <= 24 * 7)) problems.push("SESSION_MAX_HOURS must be a number from 1 to 168");
@@ -52,7 +61,7 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT ?? 8080),
     host: env.HOST ?? (insecureDev ? "127.0.0.1" : "0.0.0.0"),
     trustProxy: env.TRUST_PROXY === "1",
-    dbPath: env.DB_PATH ?? "data/dashboard.db",
+    database: { url: dbUrl, ssl: dbSsl },
     oidc: { issuer, clientId, clientSecret, redirectUri: `${publicUrl}/auth/callback`, scope: "openid profile email" },
     dataKey,
     adminOids: new Set(adminOids.map((s) => s.toLowerCase())),

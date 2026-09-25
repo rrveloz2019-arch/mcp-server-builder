@@ -2,10 +2,8 @@
 // "browser" (cookie jar + manual redirects) to drive it like a real user.
 
 import net from "node:net";
-import { mkdtempSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
+import pg from "pg";
 import { loadConfig } from "../src/config.mjs";
 import { openDb } from "../src/db.mjs";
 import { createApp } from "../src/app.mjs";
@@ -19,11 +17,34 @@ export const BOB = { oid: randomUUID(), email: "bob@client-b.example", name: "Bo
 export const VICTOR = { oid: randomUUID(), email: "victor@client-a.example", name: "Victor (viewer)" };
 export const MALLORY = { oid: randomUUID(), email: "mallory@evil.example", name: "Mallory (never invited)" };
 
+// Tests need a PostgreSQL server. Each dashboard gets its own new database,
+// dropped again on close. Default: a local server on port 55432 (see dashboard/README.md).
+export const TEST_PG = process.env.TEST_DATABASE_URL ?? "postgres://postgres@127.0.0.1:55432/postgres";
+
+async function createTestDatabase() {
+  const name = `mcpb_test_${randomBytes(6).toString("hex")}`;
+  const admin = new pg.Client({ connectionString: TEST_PG });
+  await admin.connect();
+  await admin.query(`CREATE DATABASE ${name}`);
+  await admin.end();
+  const url = new URL(TEST_PG);
+  url.pathname = `/${name}`;
+  return {
+    name, url: url.href,
+    async drop() {
+      const c = new pg.Client({ connectionString: TEST_PG });
+      await c.connect();
+      await c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      await c.end();
+    },
+  };
+}
+
 export async function startDashboard(overrides = {}, { rateLimits } = {}) {
   const clientId = "test-client", clientSecret = randomBytes(24).toString("base64url");
   const idp = await startMockOidc({ clientId, clientSecret });
   const port = await freePort();
-  const dir = mkdtempSync(path.join(os.tmpdir(), "mcpb-dash-test-"));
+  const testDb = await createTestDatabase();
   const env = {
     PUBLIC_URL: `http://127.0.0.1:${port}`,
     DASHBOARD_INSECURE_DEV: "1",
@@ -32,20 +53,21 @@ export async function startDashboard(overrides = {}, { rateLimits } = {}) {
     OIDC_CLIENT_SECRET: clientSecret,
     DATA_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
     ADMIN_OIDS: ADMIN.oid,
-    DB_PATH: path.join(dir, "dashboard.db"),
+    DATABASE_URL: testDb.url,
+    DATABASE_SSL: "off",
     ...overrides,
   };
   const config = loadConfig(env);
-  const db = openDb(config.dbPath, config.dataKey);
+  const db = await openDb(config.database, config.dataKey);
   const logs = [];
   const log = { info: (m) => logs.push(m), error: (m) => logs.push(m) };
   const server = await createApp({ config, db, log, rateLimits });
   await new Promise((r) => server.listen(port, "127.0.0.1", r));
   const base = env.PUBLIC_URL;
   return {
-    base, idp, db, config, logs, env, dbPath: config.dbPath,
+    base, idp, db, config, logs, env, testDb,
     browser: () => new Browser(base, idp),
-    close: () => { server.close(); idp.close(); db.close(); },
+    close: async () => { server.close(); idp.close(); await db.close(); await testDb.drop(); },
   };
 }
 
