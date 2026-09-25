@@ -466,9 +466,30 @@
               "type": "string",
               "pattern": "^https://"
             },
+            "additionalIssuers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^https://"
+              },
+              "description": "Other issuer values to accept, e.g. the Azure AD v1 issuer https://sts.windows.net/<tenant>/. Only `issuer` is advertised to clients."
+            },
             "audience": {
-              "type": "string",
-              "minLength": 1
+              "description": "Expected token audience. A list accepts any of them (e.g. Azure AD v2 uses the client id, v1 uses api://<client id>).",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              ]
             },
             "jwksUrl": {
               "type": "string",
@@ -476,8 +497,20 @@
               "description": "Defaults to the issuer's discovery document."
             },
             "scopeClaim": {
-              "type": "string",
-              "default": "scope"
+              "description": "Token claim(s) holding the client's scopes. A space-separated string or an array; with a list, all are merged (Azure AD: [scp, roles]).",
+              "default": "scope",
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                }
+              ]
             },
             "contextClaims": {
               "type": "object",

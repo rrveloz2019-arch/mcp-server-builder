@@ -5,7 +5,7 @@ search products, check stock and pricing, create quotes, read documents, and run
 The company's own code does not change.
 
 > **Status:** v0.3. The manifest format, validator and **generator** work. A server generated from the
-> example manifest passes 57 automated tests against a mock company API, over stdio and HTTP.
+> example manifest passes 63 automated tests against a mock company API, over stdio and HTTP.
 
 ## What a generated server provides
 
@@ -40,6 +40,11 @@ ACME_API_KEY=test-upstream-key
 API_BASE_URL=http://127.0.0.1:4010/v2
 ```
 
+### Sign in with Azure AD (Microsoft Entra ID)
+
+`examples/acme-outdoor-azure.yaml` is the same example, set up for Azure AD sign-in.
+Setup steps, and where the client secret goes, are in [`examples/azure/README.md`](examples/azure/README.md).
+
 ### Connect it to Claude Desktop (local, stdio)
 
 Add this to `claude_desktop_config.json`, with the absolute path of the generated folder:
@@ -72,7 +77,7 @@ Inside this repo, run them as `node src/cli/mcp-builder.mjs <command> …` or wi
 npm test
 ```
 
-57 tests: 20 validator tests, 11 generator and versioning tests, 14 end-to-end tests over stdio and 12 over HTTP
+63 tests: 20 validator tests, 12 generator and versioning tests, 14 end-to-end tests over stdio, 12 over HTTP and 5 with Azure AD sign-in
 (API keys, OAuth tokens, scopes, tenant isolation, rate limits, deprecation, autocomplete, progress, audit log).
 
 ## Repository layout
@@ -83,6 +88,8 @@ schema/manifest.schema.json     JSON Schema for the manifest
 examples/acme-outdoor.yaml      Complete example manifest (uses every feature)
 examples/docs/return-policy.md  File served as a resource by the example
 examples/mock-api/              Fake Acme API for demos and tests
+examples/acme-outdoor-azure.yaml  The example with Azure AD sign-in
+examples/azure/                 Azure AD setup guide and token helper
 src/catalog/tools.json          Standard sales tools: arguments, scopes, descriptions
 src/cli/mcp-builder.mjs         CLI
 src/generator/                  Code generator and version checker
