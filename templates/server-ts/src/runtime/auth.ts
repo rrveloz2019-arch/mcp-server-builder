@@ -59,9 +59,14 @@ export class ClientAuth {
     const o = this.cfg.access.oauth;
     if (o && token.split(".").length === 3) {
       try {
-        const { payload } = await jwtVerify(token, await this.keySet(), { issuer: o.issuer, audience: o.audience });
-        const rawScopes = payload[o.scopeClaim];
-        const scopes = typeof rawScopes === "string" ? rawScopes.split(/\s+/).filter(Boolean) : Array.isArray(rawScopes) ? rawScopes.map(String) : [];
+        const { payload } = await jwtVerify(token, await this.keySet(), { issuer: [o.issuer, ...(o.additionalIssuers ?? [])], audience: o.audience });
+        // Scopes can come from several claims (Azure AD: "scp" for delegated scopes, "roles" for app roles).
+        const scopes: string[] = [];
+        for (const claim of [o.scopeClaim].flat()) {
+          const raw = payload[claim];
+          if (typeof raw === "string") scopes.push(...raw.split(/\s+/).filter(Boolean));
+          else if (Array.isArray(raw)) scopes.push(...raw.map(String));
+        }
         const context: Record<string, string> = {};
         for (const [key, claim] of Object.entries(o.contextClaims)) {
           const v = payload[claim];
@@ -69,8 +74,9 @@ export class ClientAuth {
           if (typeof v !== "string" && typeof v !== "number") return { ok: false, status: 403, reason: `Token is missing the "${claim}" claim.` };
           context[key] = String(v);
         }
-        const sub = String(payload.sub ?? payload.client_id ?? "unknown");
-        const clientId = String(payload.azp ?? payload.client_id ?? sub);
+        // Azure AD puts the stable user/app id in "oid" and the calling app in "azp" (v2) or "appid" (v1).
+        const sub = String(payload.oid ?? payload.sub ?? payload.client_id ?? "unknown");
+        const clientId = String(payload.azp ?? payload.appid ?? payload.client_id ?? sub);
         return { ok: true, identity: { clientId: `oauth:${clientId}`, rateKey: `oauth:${sub}`, scopes: new Set(scopes), context, rateLimit: o.rateLimit } };
       } catch {
         return { ok: false, status: 401, reason: "Invalid or expired token." };

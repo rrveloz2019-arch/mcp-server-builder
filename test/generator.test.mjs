@@ -130,3 +130,12 @@ test("check-version: breaking argument and output changes need a major bump", ()
   assert.ok(r.changes.some((c) => /output field imageUrl removed/.test(c.message)));
   assert.ok(!r.ok);
 });
+
+test("Azure AD demo manifest is valid (multiple audiences, issuers and scope claims)", () => {
+  assert.equal(cli("validate", path.join(root, "examples/acme-outdoor-azure.yaml")).code, 0);
+  const out = tmp();
+  const r = generate(path.join(root, "examples/acme-outdoor-azure.yaml"), out);
+  assert.deepEqual(r.config.access.oauth.scopeClaim, ["roles", "scp"]);
+  assert.equal(r.config.access.oauth.audience.length, 2);
+  assert.ok(!readFileSync(path.join(out, ".env.example"), "utf8").includes("AZURE_CLIENT_SECRET"), "the server never needs the Azure secret");
+});

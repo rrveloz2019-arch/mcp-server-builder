@@ -107,9 +107,10 @@ export interface ApiKeyClient {
 
 export interface OAuthConfig {
   issuer: string;
-  audience: string;
+  additionalIssuers?: string[];
+  audience: string | string[];
   jwksUrl?: string;
-  scopeClaim: string;
+  scopeClaim: string | string[];
   contextClaims: Record<string, string>;
   rateLimit?: RateLimitConfig;
 }

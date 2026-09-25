@@ -321,6 +321,7 @@ Decisions made while building the generator. Each one is covered by a test in `t
 | OAuth tenant claim | A token without a claim listed in `contextClaims` is refused (403). | Otherwise the client would not be bound to its own tenant. |
 | `stdioScopes` default | Every scope used by a read tool. | Matches the schema description. |
 | Versioning | `mcp-builder check-version old.yaml new.yaml` lists the changes, the semver bump they need, and blocks removing a tool that was never deprecated. | Section 12 rules, enforced. |
+| OAuth providers (v0.3.1) | `audience` may be a list, `additionalIssuers` adds accepted issuers, and `scopeClaim` may list several claims that are merged. Azure AD: `scopeClaim: [roles, scp]`, audience `[<client id>, api://<client id>]`. The subject is `oid` when present. See `examples/acme-outdoor-azure.yaml`. | Azure AD issues v1 or v2 tokens depending on app settings, and puts permissions in `roles` (app roles) or `scp` (delegated). |
 | Test/staging | `API_BASE_URL` overrides `api.baseUrl`; `MCP_OAUTH_JWKS_URL` overrides the OAuth key location; `AUDIT_LOG_PATH` overrides the audit file. | Same build runs against a mock, staging or production API. |
 | **Not done yet** | `maxTotal` is accepted but **not enforced**: the generator prints a warning. The example keeps `create_order` disabled. | The amount is only known after the company API computes it; needs a design decision (e.g. a price-check request before submitting). |
 
