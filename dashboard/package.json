@@ -9,9 +9,15 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.mjs",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/demo.mjs"
   },
   "dependencies": {
-    "openid-client": "^6.8.8"
+    "openid-client": "^6.8.8",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11"
   }
 }

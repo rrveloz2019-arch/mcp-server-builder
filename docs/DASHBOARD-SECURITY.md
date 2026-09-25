@@ -14,7 +14,8 @@ its own workspace.
 | Wrong tenant | For Entra issuers, the token's `tid` must match the tenant in OIDC_ISSUER | code review only (the test provider is not Entra) |
 | Stolen or fixed session | Random 256-bit session id, stored only as a SHA-256 hash; new id on every sign-in; 60-minute idle and 8-hour absolute expiry; sign out deletes it on the server; `HttpOnly`, `SameSite=Lax`, `Secure`, `__Host-` cookie | `sign out`, `expire when idle`, `no session fixation`, `stored only as hashes` |
 | Client A sees client B's data | Every manifest query is filtered by workspace id and membership; other workspaces answer 404 (no existence leak) | `client B cannot read, change, delete, validate or download` |
-| Database file copied | Manifests encrypted with AES-256-GCM; the key lives outside the database; the workspace and manifest ids are bound in (a row moved to another workspace fails to decrypt) | `encrypted at rest`, `ciphertext moved to another workspace` |
+| Database or backup copied | Manifests encrypted with AES-256-GCM before they reach PostgreSQL; the key lives outside the database; the workspace and manifest ids are bound in (a row moved to another workspace fails to decrypt). A full `pg_dump` shows no manifest content or session token | `encrypted at rest`, `ciphertext moved to another workspace` |
+| Database traffic intercepted | TLS to PostgreSQL with certificate and host name checks, always on in production; a `sslmode` in the URL (which could turn it off) is refused at start-up; all SQL uses parameters | `config: ... without database TLS`; checked by hand: self-signed certificate refused |
 | Credentials pasted into a manifest | Saving is refused when a manifest contains a private key, cloud or API key, token, password in a URL, or a literal Authorization/API-key header. The reply names the place, never the value | `manifests containing credentials are refused` |
 | Cross-site requests (CSRF) | Changes need the session's CSRF header, the dashboard's own Origin, not `Sec-Fetch-Site: cross-site`, and a JSON body (plain form posts are 415) | `csrf: changes need...` |
 | Script injection (XSS) | Strict Content-Security-Policy (no inline scripts or styles, `default-src 'none'`), all server text escaped | `headers: strict CSP`, browser test with `<img onerror>` workspace name |
@@ -27,8 +28,8 @@ its own workspace.
 | Who did what | Audit log of sign-ins (including refused ones), workspace, invite, member, manifest and download actions | `audit: ...` |
 
 Known limits, stated plainly:
-- Rate limits and the database are for **one instance**. Do not scale out to several instances without moving to a shared database and rate limiter.
-- `node:sqlite` is marked experimental by Node.js (it works on Node 22.13+). The start and test scripts hide the warning; it is not an error.
+- Rate limits are kept in memory, so run **one instance**. The database is shared, so scaling out later only needs a shared rate limiter.
+- The tests need a PostgreSQL server (see `dashboard/README.md`).
 - The `tid` check is only exercised against real Entra, not in the automated tests.
 - The dashboard does not scan uploaded Markdown resource files for malware; it only stores them as text.
 
@@ -42,9 +43,10 @@ Do these steps in order. Nothing here is done automatically.
    - Note the **Application (client) ID** and **Directory (tenant) ID**.
    - Certificates & secrets > New client secret. Copy the value once; it goes to Key Vault.
    - Token configuration > Add optional claim > ID token > `email` (guests need it).
-2. **Create a Key Vault** and add two secrets: `oidc-client-secret` (from step 1) and `data-encryption-key` (from `openssl rand -base64 32`). Keep a copy of the encryption key somewhere safe offline: without it, saved manifests cannot be read.
-3. **Create the Web App**: runtime *Node 22 LTS*, Linux, one instance. Turn on a system-assigned managed identity and give it *Key Vault Secrets User* on the vault.
-4. **Settings** (Web App > Environment variables). Secrets are Key Vault references:
+2. **Create the database**: Azure Database for PostgreSQL flexible server (smallest Burstable size is enough to start), PostgreSQL 16, authentication *PostgreSQL*. Create a database `mcpbuilder` and a user `mcpbuilder` with a long random password that owns only that database. Networking: public access with *Allow public access from any Azure service* only, or private access in the same virtual network as the Web App; never open it to the internet. Keep `require_secure_transport` ON (the default).
+3. **Create a Key Vault** and add three secrets: `oidc-client-secret` (from step 1), `data-encryption-key` (from `openssl rand -base64 32`) and `database-url` (`postgres://mcpbuilder:<password>@<server>.postgres.database.azure.com:5432/mcpbuilder`, without `sslmode`). Keep a copy of the encryption key somewhere safe offline: without it, saved manifests cannot be read.
+4. **Create the Web App**: runtime *Node 22 LTS*, Linux, one instance. Turn on a system-assigned managed identity and give it *Key Vault Secrets User* on the vault.
+5. **Settings** (Web App > Environment variables). Secrets are Key Vault references:
    ```
    PUBLIC_URL          = https://<your-dashboard-host>
    OIDC_ISSUER         = https://login.microsoftonline.com/<tenant-id>/v2.0
@@ -53,14 +55,14 @@ Do these steps in order. Nothing here is done automatically.
    DATA_ENCRYPTION_KEY = @Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/data-encryption-key/)
    ADMIN_OIDS          = <your Entra object id>
    TRUST_PROXY         = 1
-   DB_PATH             = /home/data/dashboard.db
+   DATABASE_URL        = @Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/database-url/)
    ```
    Startup command: `cd dashboard && npm start`.
-5. **Turn on** *HTTPS Only*, minimum TLS 1.2, and turn **off** FTP/basic-auth publishing.
-6. **Deploy** the whole repository (GitHub Actions or `az webapp up`): the dashboard uses the builder's generator and validator from the repository root. Run `npm ci --omit=dev` both at the root and in `dashboard/`.
-7. **First sign-in**: open the dashboard, sign in with the admin account, then Admin > create one workspace per client company > invite people by email.
-8. **Client staff outside your tenant**: invite them as guests first (Entra admin center > Users > Invite external user), then invite the same email in the dashboard. Remove them in both places when they leave.
-9. **Back up** `/home/data/dashboard.db` (App Service backups or a scheduled copy). The file is useless without the encryption key, and the key is useless without the file, so store them apart.
+6. **Turn on** *HTTPS Only*, minimum TLS 1.2, and turn **off** FTP/basic-auth publishing.
+7. **Deploy** the whole repository (GitHub Actions or `az webapp up`): the dashboard uses the builder's generator and validator from the repository root. Run `npm ci --omit=dev` both at the root and in `dashboard/`.
+8. **First sign-in**: open the dashboard, sign in with the admin account, then Admin > create one workspace per client company > invite people by email.
+9. **Client staff outside your tenant**: invite them as guests first (Entra admin center > Users > Invite external user), then invite the same email in the dashboard. Remove them in both places when they leave.
+10. **Backups**: the flexible server takes automatic backups (set retention, e.g. 14 days). Backups are useless without the encryption key, and the key is useless without the backups, so store them apart.
 
 ## 3. Keep it safe over time
 
@@ -73,7 +75,8 @@ Do these steps in order. Nothing here is done automatically.
 
 ```
 cd dashboard && npm install
-cp .env.example .env    # set PUBLIC_URL=http://127.0.0.1:8080 and DASHBOARD_INSECURE_DEV=1
+cp .env.example .env    # set PUBLIC_URL=http://127.0.0.1:8080, DASHBOARD_INSECURE_DEV=1,
+                        # DATABASE_URL=postgres://postgres@127.0.0.1:55432/postgres and DATABASE_SSL=off
 npm start
 ```
 `DASHBOARD_INSECURE_DEV=1` allows plain http on localhost only; the server refuses it for any other address.

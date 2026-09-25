@@ -15,8 +15,8 @@ try {
   if (err instanceof ConfigError) { console.error(err.message); process.exit(1); }
   throw err;
 }
-const db = openDb(config.dbPath, config.dataKey);
+const db = await openDb(config.database, config.dataKey);
 const server = await createApp({ config, db });
 server.listen(config.port, config.host, () => console.log(`MCP Builder dashboard on ${config.host}:${config.port} (public URL ${config.publicUrl})`));
 
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { server.close(); db.close(); process.exit(0); });
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { server.close(); db.close().finally(() => process.exit(0)); });
