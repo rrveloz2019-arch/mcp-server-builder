@@ -1,6 +1,6 @@
-# MCP Server Builder: Spec & Architecture (v0.3)
+# MCP Server Builder: Spec & Architecture (v0.4)
 
-**Status:** Draft for review · **Date:** 2026-09-24 · **Scope:** design + generator (v0.3 adds the working generator; see section 17)
+**Status:** Draft for review · **Date:** 2026-09-25 · **Scope:** design + generator (v0.3 adds the working generator, see section 17; v0.4 adds user guides and packaging)
 
 ## 1. Goal
 
@@ -277,10 +277,10 @@ Deprecated tools stay callable. Their description is prefixed with "Deprecated: 
 | Manifest schema | `schema/manifest.schema.json` | **Done** |
 | Tool catalog | `src/catalog/tools.json` | **Done** |
 | Validator + 20 tests | `scripts/` | **Done** |
-| CLI (`validate`, `generate`, `check-version`) | `src/cli/` | **Done** (v0.3). `init` and `dev` are still to do. |
+| CLI (`init`, `validate`, `generate`, `check-version`, `mock-api`) | `src/cli/` | **Done** (v0.4). `dev` is still to do. |
 | Generator + TS server template + runtime (http client, auth, mapping, scopes, rate limit, audit, long-running) | `src/generator/`, `templates/server-ts/` | **Done** (v0.3) |
 | Mock API, end-to-end tests with an MCP client | `examples/mock-api/`, `test/` | **Done** (v0.3): 37 new tests |
-| Claude demo, company setup guide, packaging | `docs/` | Thread 3 |
+| Live Claude test, user guides, packaging | `QUICKSTART.md`, `docs/`, `package.json` | **Done** (v0.4). claude.ai connector not yet tested end to end. |
 
 ### Generated server layout (target)
 
@@ -294,12 +294,14 @@ acme-outdoor-sales/
   manifest.yaml, .env.example, README.md
 ```
 
-## 15. How a company will use it (target flow)
+## 15. How a company uses it
 
-1. `npx mcp-builder init` → creates `manifest.yaml`.
+Step by step: [QUICKSTART.md](../QUICKSTART.md), [MANIFEST-GUIDE.md](MANIFEST-GUIDE.md), [RUN-AND-CONNECT.md](RUN-AND-CONNECT.md).
+
+1. `mcp-builder init` → creates `manifest.yaml`.
 2. Fill in API, tools, resources, prompts, clients.
-3. `npx mcp-builder validate manifest.yaml` → fix reported issues.
-4. `npx mcp-builder generate manifest.yaml --out ./acme-outdoor-sales`.
+3. `mcp-builder validate manifest.yaml` → fix reported issues.
+4. `mcp-builder generate manifest.yaml --out ./acme-outdoor-sales`.
 5. Set env vars from `.env.example`. Run `npm install && npm run build`.
 6. Connect it to Claude (stdio locally, or the HTTP URL as a custom connector).
 

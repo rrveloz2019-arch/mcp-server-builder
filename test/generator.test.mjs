@@ -146,3 +146,29 @@ test("a read custom tool returning a raw single record compiles", () => {
   const out = buildServer(writeManifest(m));
   assert.match(readFileSync(path.join(out, "src/tools/get_warranty.ts"), "utf8"), /output: z\.object\(\{\}\)\.catchall\(z\.unknown\(\)\)/);
 });
+
+test("init creates a starter manifest that validates and generates, and never overwrites", () => {
+  const dir = tmp();
+  assert.equal(cli("init", dir).code, 0);
+  const manifest = path.join(dir, "manifest.yaml");
+  assert.equal(cli("validate", manifest).code, 0);
+  const r = generate(manifest, path.join(dir, "server"));
+  assert.deepEqual(r.tools.map((t) => t.name), ["search_products", "get_product_details", "check_stock"]);
+  const again = cli("init", dir);
+  assert.equal(again.code, 1);
+  assert.match(again.out, /already exists/);
+});
+
+test("init --example copies the full example with its resource files", () => {
+  const dir = tmp();
+  assert.equal(cli("init", dir, "--example").code, 0);
+  assert.ok(existsSync(path.join(dir, "docs/return-policy.md")));
+  assert.equal(cli("validate", path.join(dir, "manifest.yaml")).code, 0);
+});
+
+test("CLI prints its version and a clear error for a missing file", () => {
+  assert.equal(cli("--version").out.trim(), JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version);
+  const r = cli("validate", "does-not-exist.yaml");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /File not found/);
+});
