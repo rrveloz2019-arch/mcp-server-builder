@@ -31,7 +31,7 @@ function collectPlaceholders(value, out = new Set()) {
 const requestParts = (r) => (r ? [r.path, r.query, r.headers, r.body] : []);
 
 // Normalizes standard and custom tools into one list.
-function allTools(manifest) {
+export function allTools(manifest) {
   const tools = [];
   for (const [name, binding] of Object.entries(manifest.tools ?? {})) {
     const spec = catalog[name];
@@ -116,7 +116,9 @@ export function validateManifest(manifest, { baseDir = "." } = {}) {
     const uriVars = collectPlaceholders(r.uri);
     if (r.file) {
       if (uriVars.size) errors.push(`${where}: a file resource cannot have {placeholders} in its uri`);
-      if (!existsSync(path.resolve(baseDir, r.file))) errors.push(`${where}: file "${r.file}" not found next to the manifest`);
+      const resolved = path.resolve(baseDir, r.file);
+      if (path.isAbsolute(r.file) || path.relative(path.resolve(baseDir), resolved).startsWith("..")) errors.push(`${where}: file "${r.file}" must be inside the manifest's folder`);
+      else if (!existsSync(resolved)) errors.push(`${where}: file "${r.file}" not found next to the manifest`);
     } else {
       const used = collectPlaceholders(requestParts(r.request));
       for (const p of used) if (!p.startsWith("ctx.") && !uriVars.has(p)) errors.push(`${where}: placeholder {${p}} is not in the uri template`);
