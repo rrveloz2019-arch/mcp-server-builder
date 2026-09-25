@@ -95,6 +95,20 @@ test("tenant isolation: a reseller's context overrides the customer id the AI se
   assert.equal(structured(q).preview.body.customer, "C-2044");
 });
 
+test("a reseller is not asked for the customer id its connection fixes", async () => {
+  const c = await connect(KEYS.northwind);
+  const quote = (await c.listTools()).tools.find((t) => t.name === "create_quote");
+  assert.ok(!("customer_id" in quote.inputSchema.properties), "customer_id hidden from the schema");
+  assert.ok(!(quote.inputSchema.required ?? []).includes("customer_id"));
+  assert.match(quote.description, /customer_id is always "C-2044"/);
+  const q = await c.callTool({ name: "create_quote", arguments: { items: [{ product_id: "TB-100", quantity: 1 }] } });
+  assert.equal(structured(q).preview.body.customer, "C-2044");
+
+  const sales = await connect(KEYS.sales);
+  const salesQuote = (await sales.listTools()).tools.find((t) => t.name === "create_quote");
+  assert.ok("customer_id" in salesQuote.inputSchema.properties, "the sales team still chooses the customer");
+});
+
 test("the internal sales team is not bound to one customer", async () => {
   const c = await connect(KEYS.sales);
   const r = await c.callTool({ name: "get_pricing", arguments: { product_id: "TB-100", customer_id: "C-1001" } });

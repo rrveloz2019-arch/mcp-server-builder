@@ -24,12 +24,31 @@ function jsonSchema(schema: z.ZodType, io: "input" | "output"): Tool["inputSchem
   return s as Tool["inputSchema"];
 }
 
-export function describeTool(t: ToolDef): Tool {
+/**
+ * Hides arguments a client's context fixes (e.g. a reseller's customer_id), so the AI
+ * does not ask for or report a value the server would replace anyway.
+ */
+function forClient(t: ToolDef, client?: ClientIdentity): { description: string; inputSchema: Tool["inputSchema"] } {
+  const inputSchema = jsonSchema(t.input, "input");
+  const fixed = Object.entries(client?.context ?? {}).filter(([k]) => k in t.input.shape);
+  if (!fixed.length) return { description: t.description, inputSchema };
+  const properties = { ...(inputSchema.properties ?? {}) };
+  for (const [k] of fixed) delete properties[k];
+  const required = (inputSchema.required ?? []).filter((k) => !fixed.some(([f]) => f === k));
+  const schema: Tool["inputSchema"] = { ...inputSchema, properties };
+  if (required.length) schema.required = required;
+  else delete schema.required;
+  const note = fixed.map(([k, v]) => `${k} is always "${v}" for this connection`).join("; ");
+  return { description: `${t.description} (${note}.)`, inputSchema: schema };
+}
+
+export function describeTool(t: ToolDef, client?: ClientIdentity): Tool {
+  const { description, inputSchema } = forClient(t, client);
   const tool: Tool = {
     name: t.name,
     title: t.title,
-    description: t.description,
-    inputSchema: jsonSchema(t.input, "input"),
+    description,
+    inputSchema,
     outputSchema: jsonSchema(t.output, "output") as Tool["outputSchema"],
     annotations: {
       title: t.title,
@@ -67,7 +86,7 @@ function ok(structured: Record<string, unknown>): CallToolResult {
 export function registerTools(mcp: McpServer, rt: Runtime, client: ClientIdentity) {
   const visible = rt.tools.filter((t) => allowed(t.scope, client));
   mcp.server.registerCapabilities({ tools: { listChanged: false } });
-  mcp.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: visible.map(describeTool) }));
+  mcp.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: visible.map((t) => describeTool(t, client)) }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const started = Date.now();
     const name = request.params.name;

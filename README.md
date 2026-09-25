@@ -5,7 +5,7 @@ search products, check stock and pricing, create quotes, read documents, and run
 The company's own code does not change.
 
 > **Status:** v0.3. The manifest format, validator and **generator** work. A server generated from the
-> example manifest passes 63 automated tests against a mock company API, over stdio and HTTP.
+> example manifest passes 64 automated tests against a mock company API, over stdio and HTTP.
 
 ## What a generated server provides
 
@@ -61,6 +61,17 @@ Add this to `claude_desktop_config.json`, with the absolute path of the generate
 }
 ```
 
+### Connect it to Claude Code
+
+```bash
+# local (stdio)
+claude mcp add acme-outdoor-sales -- node /path/to/acme-outdoor-sales/dist/index.js --stdio
+# remote (HTTP) with a client API key
+claude mcp add --transport http acme-outdoor-sales http://127.0.0.1:3000/mcp --header "Authorization: Bearer <client-api-key>"
+```
+
+Prompts appear as slash commands, for example `/mcp__acme-outdoor-sales__prepare_quote`.
+
 ## Commands
 
 | Command | What it does |
@@ -77,7 +88,7 @@ Inside this repo, run them as `node src/cli/mcp-builder.mjs <command> …` or wi
 npm test
 ```
 
-63 tests: 20 validator tests, 12 generator and versioning tests, 14 end-to-end tests over stdio, 12 over HTTP and 5 with Azure AD sign-in
+64 tests: 20 validator tests, 12 generator and versioning tests, 14 end-to-end tests over stdio, 13 over HTTP and 5 with Azure AD sign-in
 (API keys, OAuth tokens, scopes, tenant isolation, rate limits, deprecation, autocomplete, progress, audit log).
 
 ## Repository layout
