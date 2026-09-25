@@ -30,7 +30,7 @@ function safeFiles(files) {
   return out;
 }
 
-function writeWorkspace(dir, manifest, files) {
+export function writeWorkspace(dir, manifest, files) {
   mkdirSync(dir, { recursive: true });
   for (const [rel, content] of safeFiles(files)) {
     const dest = path.join(dir, rel);

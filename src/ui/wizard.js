@@ -462,6 +462,7 @@ function renderStatus() {
   $("#yamlPreview").textContent = last.yaml;
 }
 function render() {
+  if (!$("#stepBody")) return;
   const s = STEPS[step];
   $("#stepBody").innerHTML = R[s.id]() + (s.id !== "review" ? `<div id="stepErrors">${stepErrorNote()}</div>` : "") +
     `<div class="navbtns"><button class="btn" data-goto="${step - 1}" ${step === 0 ? "disabled" : ""}>← Back</button>${step < STEPS.length - 1 ? `<button class="btn primary" data-goto="${step + 1}">Next →</button>` : ""}</div>`;
@@ -480,6 +481,7 @@ async function validate() {
   } catch (err) {
     last = { errors: [`request failed: ${err.message}`], yaml: last.yaml, summary: null };
   }
+  if (!$("#stepBody")) return; // the page moved on while validating
   renderNav(); renderStatus(); markFields();
   if (STEPS[step].id === "review" && !document.activeElement?.closest?.("#yamlEdit")) render();
   else refreshStepErrors();

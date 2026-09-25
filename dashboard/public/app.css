@@ -1,0 +1,25 @@
+/* Dashboard screens around the shared wizard (colors come from wizard.css). */
+.loading { padding: 40px; color: var(--muted); }
+.topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.topbar h1 { font-size: 18px; margin: 0; }
+.topbar .who { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.page { max-width: 1000px; margin: 0 auto; padding: 20px 16px; }
+.page h2 { font-size: 20px; margin: 0 0 6px; }
+.signin { max-width: 460px; margin: 12vh auto; padding: 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.signin h1 { font-size: 22px; margin: 0 0 8px; }
+a.btn { text-decoration: none; }
+table.list { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 14px; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12.5px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+table.list td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.list td.actions { text-align: right; white-space: nowrap; }
+.tablewrap { overflow-x: auto; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0 16px; }
+.inline-form input, .inline-form select { max-width: 280px; }
+.pill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--code); color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 12px 0; }
+.wscard { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; cursor: pointer; font: inherit; color: var(--ink); }
+.wscard:hover { border-color: var(--accent); }
+.wscard strong { display: block; font-size: 15px; margin-bottom: 4px; }
+.editbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hidden { display: none; }
+.flash { position: fixed; right: 16px; bottom: 16px; z-index: 10; box-shadow: 0 4px 16px rgba(0,0,0,.15); }
