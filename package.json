@@ -13,7 +13,8 @@
     "check-version": "node src/cli/mcp-builder.mjs check-version",
     "mock-api": "node examples/mock-api/acme-mock-api.mjs",
     "test": "node --test scripts/*.test.mjs test/*.test.mjs",
-    "azure": "node examples/azure/azure-demo.mjs"
+    "azure": "node examples/azure/azure-demo.mjs",
+    "intake": "node src/cli/mcp-builder.mjs intake"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.1",
