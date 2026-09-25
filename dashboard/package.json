@@ -1,0 +1,17 @@
+{
+  "name": "mcp-builder-dashboard",
+  "version": "0.1.0",
+  "description": "Hosted dashboard where invited clients create MCP server manifests and download generated servers.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.mjs",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "openid-client": "^6.8.8"
+  }
+}
