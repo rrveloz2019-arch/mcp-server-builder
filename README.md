@@ -5,7 +5,7 @@ search products, check stock and pricing, create quotes, read documents, and run
 The company's own code does not change.
 
 > **Status:** v0.3. The manifest format, validator and **generator** work. A server generated from the
-> example manifest passes 64 automated tests against a mock company API, over stdio and HTTP.
+> example manifest passes 71 automated tests against a mock company API, over stdio and HTTP.
 
 ## What a generated server provides
 
@@ -30,6 +30,19 @@ npm install && npm run build                              # 3. build it
 cp .env.example .env                                      # 4. fill in the values
 npm run start:stdio                                       # 5. run it (or npm run start:http)
 ```
+
+### Or fill in a form instead of writing YAML
+
+```bash
+npm run intake        # starts a local wizard at http://127.0.0.1:4321/
+```
+
+The wizard walks through 8 steps (company and server, company API and its sign-in, the 8 standard tools,
+field mappings, custom tools, resources and prompts, access / rate limits / Azure AD / audit), shows the
+manifest live, and checks it with the same validator as `mcp-builder validate` as you type. When it is valid,
+**Generate server** saves `intake-output/<server-name>/manifest.yaml` and generates the server into
+`intake-output/<server-name>/server`, then shows the next commands. You can also start from the Acme examples
+or import an existing manifest. It listens on 127.0.0.1 only and never asks for secrets, only env var names.
 
 To try it without a real company API, start the mock API in another terminal and point the server at it:
 
@@ -79,6 +92,7 @@ Prompts appear as slash commands, for example `/mcp__acme-outdoor-sales__prepare
 | `mcp-builder validate <manifest>` | Checks the manifest and lists what it exposes |
 | `mcp-builder generate <manifest> --out <folder>` | Generates the TypeScript server. Refuses to write into a non-empty folder it did not create. |
 | `mcp-builder check-version <old> <new>` | Lists the changes between two manifests, the version bump they need, and blocks unsafe removals |
+| `mcp-builder intake [--port 4321] [--out-root intake-output]` | Starts the intake wizard: a local web form that writes, validates and generates a manifest |
 
 Inside this repo, run them as `node src/cli/mcp-builder.mjs <command> …` or with the npm scripts above.
 
@@ -88,7 +102,7 @@ Inside this repo, run them as `node src/cli/mcp-builder.mjs <command> …` or wi
 npm test
 ```
 
-64 tests: 20 validator tests, 12 generator and versioning tests, 14 end-to-end tests over stdio, 13 over HTTP and 5 with Azure AD sign-in
+71 tests: 20 validator tests, 13 generator and versioning tests, 14 end-to-end tests over stdio, 13 over HTTP, 5 with Azure AD sign-in and 6 for the intake wizard
 (API keys, OAuth tokens, scopes, tenant isolation, rate limits, deprecation, autocomplete, progress, audit log).
 
 ## Repository layout
@@ -103,6 +117,7 @@ examples/acme-outdoor-azure.yaml  The example with Azure AD sign-in
 examples/azure/                 Azure AD setup guide and token helper
 src/catalog/tools.json          Standard sales tools: arguments, scopes, descriptions
 src/cli/mcp-builder.mjs         CLI
+src/intake/                     Intake wizard (local web form + API)
 src/generator/                  Code generator and version checker
 templates/server-ts/            Runtime copied into every generated server
 scripts/validate-manifest.mjs   Manifest validator (+ tests)

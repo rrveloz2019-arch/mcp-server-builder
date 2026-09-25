@@ -3,6 +3,7 @@
 //   mcp-builder validate <manifest.yaml>
 //   mcp-builder generate <manifest.yaml> --out <folder>
 //   mcp-builder check-version <old-manifest.yaml> <new-manifest.yaml>
+//   mcp-builder intake [--port 4321] [--out-root intake-output]
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -10,11 +11,13 @@ import YAML from "yaml";
 import { validateManifest, summarize } from "../../scripts/validate-manifest.mjs";
 import { generate, ManifestError } from "../generator/generate.mjs";
 import { compareManifests } from "../generator/versioning.mjs";
+import { startIntake } from "../intake/server.mjs";
 
 const USAGE = `Usage:
   mcp-builder validate <manifest.yaml>
   mcp-builder generate <manifest.yaml> --out <folder>
-  mcp-builder check-version <old-manifest.yaml> <new-manifest.yaml>`;
+  mcp-builder check-version <old-manifest.yaml> <new-manifest.yaml>
+  mcp-builder intake [--port 4321] [--out-root intake-output]`;
 
 const load = (file) => YAML.parse(readFileSync(file, "utf8"));
 
@@ -57,6 +60,17 @@ function main(argv) {
     for (const c of r.changes) console.log(`  [${c.level}] ${c.message}`);
     for (const p of r.problems) console.log(`  ✗ ${p}`);
     return r.ok ? 0 : 1;
+  }
+
+  if (cmd === "intake") {
+    const port = Number(flag("--port") ?? 4321);
+    const outRoot = path.resolve(flag("--out-root") ?? "intake-output");
+    startIntake({ port, outRoot }).then((server) => {
+      console.log(`Intake wizard: http://127.0.0.1:${server.address().port}/`);
+      console.log(`Manifests and generated servers are saved under ${outRoot}`);
+      console.log("Press Ctrl+C to stop.");
+    });
+    return 0;
   }
 
   return fail(USAGE);

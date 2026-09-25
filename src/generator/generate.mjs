@@ -68,7 +68,7 @@ function zodObject(args, indent = "  ") {
 }
 
 function zodRecord(fields) {
-  if (!fields) return "z.record(z.string(), z.unknown())";
+  if (!fields) return "z.object({}).catchall(z.unknown())";
   return `z.object({ ${Object.keys(fields).map((k) => `${lit(k)}: z.unknown()`).join(", ")} })`;
 }
 

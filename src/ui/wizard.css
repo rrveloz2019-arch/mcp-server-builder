@@ -1,0 +1,92 @@
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2433; --muted: #5d6679; --line: #dde1e8;
+    --accent: #2f5bd3; --accent-ink: #ffffff; --ok: #1f7a4d; --ok-bg: #e7f5ee; --bad: #b3261e; --bad-bg: #fdecea;
+    --warn: #8a5a00; --warn-bg: #fff4dc; --code: #f0f2f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --panel: #1c2028; --ink: #e6e9ef; --muted: #9aa3b5; --line: #2e3440;
+      --accent: #7c9cff; --accent-ink: #0d1020; --ok: #6fd3a0; --ok-bg: #16322a; --bad: #ff8a80; --bad-bg: #3a1d1b;
+      --warn: #ffcc66; --warn-bg: #3a2f14; --code: #232833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 18px; margin: 0; }
+  header .start { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  main { display: grid; grid-template-columns: 220px minmax(0, 1fr) minmax(0, 420px); gap: 16px; padding: 16px 20px; max-width: 1500px; margin: 0 auto; }
+  nav ol { list-style: none; padding: 0; margin: 0; position: sticky; top: 16px; }
+  nav li button { width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; margin-bottom: 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
+  nav li button:hover { background: var(--panel); border-color: var(--line); }
+  nav li button[aria-current="step"] { background: var(--panel); border-color: var(--accent); font-weight: 600; }
+  .badge { font-size: 12px; border-radius: 10px; padding: 1px 7px; background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  section.step { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  section.step h2 { margin: 0 0 4px; font-size: 20px; }
+  .lead { color: var(--muted); margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px; }
+  label.f { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+  label.f span.h { font-weight: 400; color: var(--muted); font-size: 12px; }
+  input[type=text], input[type=number], input[type=url], select, textarea {
+    font-weight: 400;
+    font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; width: 100%;
+  }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; min-height: 64px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  .invalid { border-color: var(--bad) !important; background: var(--bad-bg) !important; }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+  .card.off { opacity: .65; }
+  .card h3 { margin: 0; font-size: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .card .body { margin-top: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .muted { color: var(--muted); font-size: 13px; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  .btn { font: inherit; display: inline-block; font-size: 14px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.danger { color: var(--bad); }
+  button.small { padding: 3px 9px; font-size: 13px; }
+  table.args { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  table.args th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px; }
+  table.args td { padding: 3px 4px; vertical-align: top; }
+  .note { border-radius: 8px; padding: 10px 12px; font-size: 13.5px; margin: 10px 0; }
+  .note.warn { background: var(--warn-bg); color: var(--warn); }
+  .note.ok { background: var(--ok-bg); color: var(--ok); }
+  .note.bad { background: var(--bad-bg); color: var(--bad); }
+  aside { position: sticky; top: 16px; align-self: start; display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .panel h3 { margin: 0 0 8px; font-size: 14px; }
+  pre.yaml { margin: 0; max-height: 60vh; overflow: auto; background: var(--code); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.4; white-space: pre; }
+  ul.errors { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+  ul.errors li { margin-bottom: 4px; }
+  ul.errors a { color: inherit; }
+  .navbtns { display: flex; justify-content: space-between; margin-top: 20px; }
+  .result pre { white-space: pre-wrap; background: var(--code); padding: 10px; border-radius: 8px; font-size: 12.5px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 200px minmax(0, 1fr); } aside { grid-column: 1 / -1; position: static; } }
+  @media (max-width: 720px) {
+    main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
+    nav ol { position: static; display: flex; overflow-x: auto; gap: 4px; }
+    nav li button { white-space: nowrap; }
+  }
+
+  /* utility classes (no inline styles, so the page works under a strict CSP) */
+  .clickable { cursor:pointer; }
+  .sub { font-size:15px; }
+  .sub-10-0 { margin:10px 0 0; }
+  .sub-10-4 { margin:10px 0 4px; }
+  .sub-18-0 { margin:18px 0 0; }
+  .sub-22-0 { margin:22px 0 0; }
+  .sub-22-6 { margin:22px 0 6px; }
+  .sub-18-6 { margin:18px 0 6px; }
+  .span-all { grid-column:1/-1; }
+  .mt10 { margin-top:10px; }
+  .mt16 { margin-top:16px; }
+  .mt6 { margin-top:6px; }
+  .m0 { margin:0; }
+  .my14 { margin:14px 0; }
+  .mt4only { margin:4px 0 0; }
+  .mt6only { margin:6px 0 0; }
+  .w280 { max-width:280px; }
+  .h280 { min-height:280px; }

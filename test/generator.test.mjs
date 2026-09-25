@@ -8,7 +8,7 @@ import path from "node:path";
 import YAML from "yaml";
 import { generate, zodForArg, ManifestError } from "../src/generator/generate.mjs";
 import { compareManifests } from "../src/generator/versioning.mjs";
-import { examplePath, root, writeManifest } from "./helpers.mjs";
+import { buildServer, examplePath, root, writeManifest } from "./helpers.mjs";
 
 const load = () => YAML.parse(readFileSync(examplePath, "utf8"));
 const tmp = () => mkdtempSync(path.join(os.tmpdir(), "mcpb-gen-"));
@@ -138,4 +138,11 @@ test("Azure AD demo manifest is valid (multiple audiences, issuers and scope cla
   assert.deepEqual(r.config.access.oauth.scopeClaim, ["roles", "scp"]);
   assert.equal(r.config.access.oauth.audience.length, 2);
   assert.ok(!readFileSync(path.join(out, ".env.example"), "utf8").includes("AZURE_CLIENT_SECRET"), "the server never needs the Azure secret");
+});
+
+test("a read custom tool returning a raw single record compiles", () => {
+  const m = load();
+  m.customTools = [{ name: "get_warranty", title: "Get warranty", description: "Look up the warranty record for one product by its id and return it as is.", kind: "read", scope: "catalog:read", args: { product_id: { type: "string", required: true } }, request: { method: "GET", path: "/warranty/{product_id}" }, response: { recordPath: "data", mapping: "raw" } }];
+  const out = buildServer(writeManifest(m));
+  assert.match(readFileSync(path.join(out, "src/tools/get_warranty.ts"), "utf8"), /output: z\.object\(\{\}\)\.catchall\(z\.unknown\(\)\)/);
 });
