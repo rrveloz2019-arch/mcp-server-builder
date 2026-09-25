@@ -1,6 +1,6 @@
-# MCP Server Builder: Spec & Architecture (v0.2)
+# MCP Server Builder: Spec & Architecture (v0.3)
 
-**Status:** Draft for review · **Date:** 2026-09-24 · **Scope:** design only (the generator is built in the next phase)
+**Status:** Draft for review · **Date:** 2026-09-24 · **Scope:** design + generator (v0.3 adds the working generator; see section 17)
 
 ## 1. Goal
 
@@ -274,9 +274,9 @@ Deprecated tools stay callable. Their description is prefixed with "Deprecated: 
 | Manifest schema | `schema/manifest.schema.json` | **Done** |
 | Tool catalog | `src/catalog/tools.json` | **Done** |
 | Validator + 20 tests | `scripts/` | **Done** |
-| CLI (`init`, `validate`, `generate`, `dev`) | `src/cli/` | Thread 2 |
-| Generator + TS server template + runtime (http client, auth, mapping, scopes, rate limit, audit, long-running) | `src/generator/`, `templates/server-ts/` | Thread 2 |
-| Mock API, end-to-end tests with an MCP client | `examples/` | Thread 2 |
+| CLI (`validate`, `generate`, `check-version`) | `src/cli/` | **Done** (v0.3). `init` and `dev` are still to do. |
+| Generator + TS server template + runtime (http client, auth, mapping, scopes, rate limit, audit, long-running) | `src/generator/`, `templates/server-ts/` | **Done** (v0.3) |
+| Mock API, end-to-end tests with an MCP client | `examples/mock-api/`, `test/` | **Done** (v0.3): 37 new tests |
 | Claude demo, company setup guide, packaging | `docs/` | Thread 3 |
 
 ### Generated server layout (target)
@@ -305,3 +305,22 @@ acme-outdoor-sales/
 1. Direct database source in v1? *Default: no, go through the HTTP API. Add it as a v2 `source` type.*
 2. Hosting? *Default: the company self-hosts.*
 3. OAuth provider to test against in thread 2? *Default: a local mock issuer in tests.*
+
+## 17. Implementation notes (v0.3 generator)
+
+Decisions made while building the generator. Each one is covered by a test in `test/`.
+
+| Topic | What the generated server does | Why |
+|---|---|---|
+| Error format | `isError: true` and the fixed `{ error: { code, message, retryable, retryAfterMs? } }` JSON in the **text** content. `structuredContent` is left out on errors. | The official MCP client checks any `structuredContent` against the tool's `outputSchema`, even on errors, and rejects the call if it does not match (found in testing). |
+| Bad input, unknown tool, missing scope | Same fixed error shape (`invalid_input`, `not_found`, `forbidden`). Unknown arguments are rejected. | Tools are registered on the low-level server so the SDK's own plain-text errors never reach the AI. |
+| Output shapes | read record → mapped object; list → `{ items, nextCursor? }`; write → `{ status: "preview" \| "done", preview?, result? }`; long-running → `{ jobId, state, result }`. Mapped fields are always present (null when missing). | One predictable shape per tool. |
+| Retries | Only read and `idempotent` tools are retried (5xx and timeouts, twice). Write tools are sent once. | Retrying a write could create a quote or order twice. |
+| HTTP transport | Stateless Streamable HTTP: each POST is authenticated and served by a server built for that client, so `tools/list`, `resources/list` and `prompts/list` only show what the client's scopes allow. Listens on `127.0.0.1` unless `HOST` is set. | No session state to leak between tenants. |
+| Items without a `scope` | Visible to every authenticated client (e.g. the return policy). | The example leaves public documents unscoped. |
+| OAuth tenant claim | A token without a claim listed in `contextClaims` is refused (403). | Otherwise the client would not be bound to its own tenant. |
+| `stdioScopes` default | Every scope used by a read tool. | Matches the schema description. |
+| Versioning | `mcp-builder check-version old.yaml new.yaml` lists the changes, the semver bump they need, and blocks removing a tool that was never deprecated. | Section 12 rules, enforced. |
+| Test/staging | `API_BASE_URL` overrides `api.baseUrl`; `MCP_OAUTH_JWKS_URL` overrides the OAuth key location; `AUDIT_LOG_PATH` overrides the audit file. | Same build runs against a mock, staging or production API. |
+| **Not done yet** | `maxTotal` is accepted but **not enforced**: the generator prints a warning. The example keeps `create_order` disabled. | The amount is only known after the company API computes it; needs a design decision (e.g. a price-check request before submitting). |
+
