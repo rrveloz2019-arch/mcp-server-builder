@@ -1,0 +1,351 @@
+# Example manifest for a fictional company, "Acme Outdoor Supply".
+# It uses every feature: standard sales tools, custom tools, resources,
+# prompts, per-client access, audit logging and a long-running tool.
+# A company copies this file, points it at its own API, and runs the builder.
+# Secrets are NEVER written here: each *Env field names an environment variable.
+
+manifestVersion: "1"
+
+company:
+  name: Acme Outdoor Supply
+  website: https://acme-outdoor.example.com
+  defaultCurrency: USD
+
+server:
+  name: acme-outdoor-sales
+  version: 0.1.0
+  description: Product search, stock, pricing and quoting for Acme Outdoor Supply.
+  instructions: >-
+    Use this server to help customers find Acme Outdoor products and buy them.
+    Search first, then check stock and pricing before quoting. Never create a
+    quote or order without showing the preview to the user and getting a yes.
+  transports: [stdio, http]
+  http:
+    port: 3000
+    path: /mcp
+    publicUrl: https://mcp.acme-outdoor.example.com/mcp
+
+api:
+  baseUrl: https://api.acme-outdoor.example.com/v2
+  timeoutMs: 8000
+  headers:
+    Accept: application/json
+  auth:
+    type: api_key
+    in: header
+    name: X-Api-Key
+    valueEnv: ACME_API_KEY
+  rateLimit:
+    requestsPerMinute: 120
+
+# Left side = the builder's standard field. Right side = dot path in Acme's JSON.
+mappings:
+  product:
+    id: sku
+    name: title
+    description: summary
+    category: category.name
+    price: pricing.list
+    currency: pricing.currency
+    url: links.web
+    imageUrl: media.0.url
+  stock:
+    productId: sku
+    available: inventory.available
+    location: warehouse.code
+    restockDate: inventory.next_restock
+  price:
+    productId: sku
+    unitPrice: unit_price
+    currency: currency
+    quantity: qty
+    discountPercent: discount_pct
+    total: line_total
+  quote:
+    id: quote_id
+    status: state
+    total: totals.grand_total
+    currency: totals.currency
+    expiresAt: valid_until
+    url: links.pdf
+  order:
+    id: order_number
+    status: status
+    total: totals.grand_total
+    currency: totals.currency
+    createdAt: created_at
+  verification:
+    genuine: is_authentic
+    productId: sku
+    batch: batch_code
+    warrantyUntil: warranty.expires
+
+tools:
+  search_products:
+    request:
+      method: GET
+      path: /products
+      query:
+        q: "{query}"
+        category: "{category}"
+        limit: "{limit}"
+        cursor: "{cursor}"
+    response:
+      itemsPath: data
+      nextCursorPath: meta.next
+      mapping: product
+
+  get_product_details:
+    request:
+      method: GET
+      path: /products/{product_id}
+    response:
+      recordPath: data
+      mapping: product
+
+  list_categories:
+    request:
+      method: GET
+      path: /categories
+    response:
+      itemsPath: data
+      mapping: raw
+
+  check_stock:
+    request:
+      method: GET
+      path: /inventory/{product_id}
+      query:
+        warehouse: "{location}"
+    response:
+      itemsPath: data
+      mapping: stock
+
+  get_pricing:
+    request:
+      method: POST
+      path: /pricing/calculate
+      body:
+        sku: "{product_id}"
+        qty: "{quantity}"
+        customer: "{customer_id}"
+    response:
+      recordPath: data
+      mapping: price
+
+  create_quote:
+    requireConfirmation: true
+    request:
+      method: POST
+      path: /quotes
+      body:
+        customer: "{customer_id}"
+        lines: "{items}"
+        note: "{notes}"
+    response:
+      recordPath: data
+      mapping: quote
+
+  # Placing real orders is off until the company deliberately turns it on.
+  create_order:
+    enabled: false
+    requireConfirmation: true
+    maxTotal: 5000
+    request:
+      method: POST
+      path: /orders
+      body:
+        quote_id: "{quote_id}"
+    response:
+      recordPath: data
+      mapping: order
+
+  get_order_status:
+    request:
+      method: GET
+      path: /orders/{order_id}
+    response:
+      recordPath: data
+      mapping: order
+
+# Company-specific tools beyond the standard sales catalog.
+customTools:
+  - name: verify_qr_code
+    title: Verify product QR code
+    description: >-
+      Check whether a QR code scanned from a product label is genuine and return the
+      product it belongs to, its batch and warranty status. Use when a customer asks
+      if an item is authentic or wants warranty information from a scanned label.
+    kind: read
+    scope: catalog:read
+    args:
+      code:
+        type: string
+        required: true
+        description: The raw text decoded from the QR code.
+    request:
+      method: POST
+      path: /authenticity/verify
+      body:
+        qr: "{code}"
+    response:
+      recordPath: data
+      mapping: verification
+
+  - name: send_quote_email
+    title: Email a quote to the customer
+    description: >-
+      Email an existing quote as a PDF to the customer's contact on file. Use only after
+      create_quote succeeded and the user asked to send it. Returns the delivery status.
+    kind: write
+    scope: quotes:write
+    args:
+      quote_id:
+        type: string
+        required: true
+        description: Id returned by create_quote.
+      message:
+        type: string
+        description: Optional short note included in the email body.
+    request:
+      method: POST
+      path: /quotes/{quote_id}/send
+      body:
+        note: "{message}"
+    response:
+      recordPath: data
+      mapping: raw
+
+  - name: generate_sales_report
+    title: Generate sales report
+    description: >-
+      Build a sales report for one customer account over a date range: orders, revenue
+      and top products. Takes up to a few minutes; progress is reported while it runs.
+    kind: read
+    scope: reports:read
+    args:
+      customer_id:
+        type: string
+        required: true
+        description: Customer account id.
+      from:
+        type: string
+        required: true
+        description: Start date, YYYY-MM-DD.
+      to:
+        type: string
+        required: true
+        description: End date, YYYY-MM-DD.
+    request:
+      method: POST
+      path: /reports
+      body:
+        customer: "{customer_id}"
+        from: "{from}"
+        to: "{to}"
+    response:
+      recordPath: data
+      mapping: raw
+    longRunning:
+      jobIdPath: data.job_id
+      statusRequest:
+        method: GET
+        path: /reports/{job_id}
+      statusPath: data.state
+      doneValues: [complete]
+      failedValues: [failed]
+      progressPath: data.percent
+      pollIntervalMs: 2000
+      timeoutMs: 300000
+
+# Read-only data the AI can open directly.
+resources:
+  - name: product_record
+    title: Product record
+    description: Full catalog record for one product, including specs and media links.
+    uri: catalog://products/{product_id}
+    scope: catalog:read
+    request:
+      method: GET
+      path: /products/{product_id}
+    response:
+      recordPath: data
+      mapping: product
+    list:
+      method: GET
+      path: /products
+      query:
+        limit: 100
+    listResponse:
+      itemsPath: data
+      mapping: product
+
+  - name: return_policy
+    title: Return and warranty policy
+    description: Acme's current return, exchange and warranty policy in plain text.
+    uri: docs://policies/returns
+    mimeType: text/markdown
+    file: docs/return-policy.md
+
+# Ready-made tasks a client can offer the user.
+prompts:
+  - name: prepare_quote
+    title: Prepare a quote
+    description: Walk through building a quote for a customer from a list of items they want.
+    args:
+      customer_id:
+        description: Customer account id.
+        required: true
+      items:
+        description: What the customer wants, in plain words (e.g. "20 pairs of trail boots, size mix").
+        required: true
+    template: >-
+      Prepare a quote for customer {customer_id}. They want: {items}.
+      Find matching products, check stock and pricing for each, show me a preview,
+      and only create the quote after I approve it.
+    scope: quotes:write
+
+  - name: compare_products
+    title: Compare products
+    description: Compare two or more products side by side on price, specs and availability.
+    args:
+      products:
+        description: Product names or SKUs, comma separated.
+        required: true
+    template: >-
+      Compare these products side by side: {products}. Include price, key specs,
+      stock and which one fits which kind of customer. Mention our return policy.
+    embedResources: [docs://policies/returns]
+
+# Who may connect, and what each client may see.
+access:
+  stdioScopes: [catalog:read, stock:read, pricing:read, orders:read, quotes:write, reports:read]
+  apiKeys:
+    - clientId: acme-sales-team
+      description: Acme's own sales reps using Claude.
+      keyHashEnv: ACME_SALES_TEAM_KEY_SHA256
+      scopes: [catalog:read, stock:read, pricing:read, orders:read, quotes:write, reports:read]
+      rateLimit:
+        requestsPerMinute: 120
+    - clientId: northwind-reseller
+      description: A reseller's assistant. Sees only its own prices, quotes and orders.
+      keyHashEnv: NORTHWIND_KEY_SHA256
+      scopes: [catalog:read, stock:read, pricing:read, orders:read, quotes:write, reports:read]
+      context:
+        customer_id: C-2044
+      rateLimit:
+        requestsPerMinute: 30
+  oauth:
+    issuer: https://login.acme-outdoor.example.com
+    audience: https://mcp.acme-outdoor.example.com/mcp
+    contextClaims:
+      customer_id: acme_customer_id
+    rateLimit:
+      requestsPerMinute: 60
+
+audit:
+  enabled: true
+  sink: file
+  path: logs/audit.jsonl
+  includeArguments: true
+  redactFields: [message]

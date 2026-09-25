@@ -1,0 +1,167 @@
+{
+  "search_products": {
+    "title": "Search products",
+    "description": "Search the product catalog by keyword and optional category. Returns matching products with id, name, price and a link. Use get_product_details for full information on one product.",
+    "kind": "read",
+    "scope": "catalog:read",
+    "mapping": "product",
+    "args": {
+      "query": {
+        "type": "string",
+        "required": true,
+        "description": "Keywords, e.g. 'waterproof hiking boots'."
+      },
+      "category": {
+        "type": "string",
+        "description": "Category name or id from list_categories."
+      },
+      "limit": {
+        "type": "integer",
+        "min": 1,
+        "max": 50,
+        "default": 10,
+        "description": "Max results to return."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Pagination cursor from a previous call."
+      }
+    }
+  },
+  "get_product_details": {
+    "title": "Get product details",
+    "description": "Get full details for one product by its id or SKU.",
+    "kind": "read",
+    "scope": "catalog:read",
+    "mapping": "product",
+    "args": {
+      "product_id": {
+        "type": "string",
+        "required": true,
+        "description": "Product id or SKU."
+      }
+    }
+  },
+  "list_categories": {
+    "title": "List categories",
+    "description": "List the product categories customers can browse.",
+    "kind": "read",
+    "scope": "catalog:read",
+    "mapping": "raw",
+    "args": {}
+  },
+  "check_stock": {
+    "title": "Check stock",
+    "description": "Check how many units of a product are available, optionally at one location.",
+    "kind": "read",
+    "scope": "stock:read",
+    "mapping": "stock",
+    "args": {
+      "product_id": {
+        "type": "string",
+        "required": true,
+        "description": "Product id or SKU."
+      },
+      "location": {
+        "type": "string",
+        "description": "Warehouse or store code."
+      }
+    }
+  },
+  "get_pricing": {
+    "title": "Get pricing",
+    "description": "Get the price for a quantity of a product, including any customer-specific or volume discount.",
+    "kind": "read",
+    "scope": "pricing:read",
+    "mapping": "price",
+    "args": {
+      "product_id": {
+        "type": "string",
+        "required": true,
+        "description": "Product id or SKU."
+      },
+      "quantity": {
+        "type": "integer",
+        "min": 1,
+        "default": 1,
+        "description": "Number of units."
+      },
+      "customer_id": {
+        "type": "string",
+        "description": "Customer account id, for contract pricing."
+      }
+    }
+  },
+  "create_quote": {
+    "title": "Create quote",
+    "description": "Create a price quote for a customer. Without confirm=true it only returns a preview; nothing is saved until confirmed.",
+    "kind": "write",
+    "scope": "quotes:write",
+    "mapping": "quote",
+    "args": {
+      "customer_id": {
+        "type": "string",
+        "required": true,
+        "description": "Customer account id."
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "Lines to quote.",
+        "items": {
+          "product_id": {
+            "type": "string",
+            "required": true
+          },
+          "quantity": {
+            "type": "integer",
+            "min": 1,
+            "required": true
+          }
+        }
+      },
+      "notes": {
+        "type": "string",
+        "description": "Free-text note for the quote."
+      },
+      "confirm": {
+        "type": "boolean",
+        "default": false,
+        "description": "Set true only after the user approved the preview."
+      }
+    }
+  },
+  "create_order": {
+    "title": "Create order",
+    "description": "Place an order from an accepted quote. Without confirm=true it only returns a preview. Places a real order when confirmed.",
+    "kind": "write",
+    "scope": "orders:write",
+    "mapping": "order",
+    "args": {
+      "quote_id": {
+        "type": "string",
+        "required": true,
+        "description": "Id of the quote to convert."
+      },
+      "confirm": {
+        "type": "boolean",
+        "default": false,
+        "description": "Set true only after the user approved the preview."
+      }
+    }
+  },
+  "get_order_status": {
+    "title": "Get order status",
+    "description": "Look up the status of an existing order.",
+    "kind": "read",
+    "scope": "orders:read",
+    "mapping": "order",
+    "args": {
+      "order_id": {
+        "type": "string",
+        "required": true,
+        "description": "Order number."
+      }
+    }
+  }
+}

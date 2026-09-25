@@ -1,0 +1,17 @@
+{
+  "name": "mcp-server-builder",
+  "version": "0.1.0",
+  "description": "Generate an MCP server that exposes a company's product and sales API to AI assistants.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "validate": "node scripts/validate-manifest.mjs",
+    "test": "node --test scripts/*.test.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.8.1"
+  }
+}
