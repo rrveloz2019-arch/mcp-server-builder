@@ -1,0 +1,90 @@
+# Starter manifest created by `mcp-builder init`.
+# It works as-is against the demo API (`mcp-builder mock-api`), so you can
+# generate and try a server first, then change it to describe your own API.
+# Guide: docs/MANIFEST-GUIDE.md. Full reference: docs/SPEC.md and schema/manifest.schema.json.
+# Secrets are NEVER written here: every *Env field names an environment variable.
+
+manifestVersion: "1"
+
+# 1. Who the server is for.
+company:
+  name: My Company
+  defaultCurrency: USD
+
+# 2. The MCP server itself. `name` becomes the package and folder name.
+server:
+  name: my-company-sales
+  version: 0.1.0
+  description: Product search and stock for My Company.
+  instructions: >-
+    Use this server to find My Company products and check stock.
+    Search first, then check stock before recommending a product.
+  transports: [stdio]        # add http later for remote clients (then an `access` section is required)
+
+# 3. Your existing API: where it is and how the server logs in to it.
+api:
+  baseUrl: http://127.0.0.1:4010/v2      # demo API; change to https://api.your-company.com/...
+  timeoutMs: 8000
+  auth:
+    type: api_key
+    in: header
+    name: X-Api-Key
+    valueEnv: MY_COMPANY_API_KEY          # the key itself goes in the server's .env
+
+# 4. How your API's JSON field names map to the builder's standard fields.
+#    Left = standard field. Right = dot path in your API's JSON.
+mappings:
+  product:
+    id: sku
+    name: title
+    description: summary
+    category: category.name
+    price: pricing.list
+    currency: pricing.currency
+    url: links.web
+  stock:
+    productId: sku
+    available: inventory.available
+    location: warehouse.code
+    restockDate: inventory.next_restock
+
+# 5. Which standard tools to turn on, and which endpoint each one calls.
+#    {placeholders} are filled from the tool's arguments.
+tools:
+  search_products:
+    request:
+      method: GET
+      path: /products
+      query:
+        q: "{query}"
+        category: "{category}"
+        limit: "{limit}"
+    response:
+      itemsPath: data        # where the list is in the JSON response
+      mapping: product
+
+  get_product_details:
+    request:
+      method: GET
+      path: /products/{product_id}
+    response:
+      recordPath: data       # where the single record is
+      mapping: product
+
+  check_stock:
+    request:
+      method: GET
+      path: /inventory/{product_id}
+      query:
+        warehouse: "{location}"
+    response:
+      itemsPath: data
+      mapping: stock
+
+# 6. What the local (stdio) user may do.
+access:
+  stdioScopes: [catalog:read, stock:read]
+
+audit:
+  enabled: true
+  sink: stderr
